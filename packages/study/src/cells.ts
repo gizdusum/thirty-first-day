@@ -6,7 +6,7 @@
  * noPayoutSell) and reporting differences, never levels alone.
  */
 
-import { resolveConfig, type ConfigOverrides } from '@thirty-first-day/protocol'
+import { DEFAULT_CONFIG, resolveConfig, type ConfigOverrides } from '@thirty-first-day/protocol'
 
 export interface CellSpec {
   /** Stable, content-derived. See `cellId`. */
@@ -70,28 +70,65 @@ export function contentHash(input: string): string {
 }
 
 /**
+ * The part of a resolved configuration that differs from the defaults.
+ *
+ * Recursive, so a nested object contributes only the leaves that actually
+ * moved. `{}` means "the defaults", however many fields the defaults happen to
+ * have.
+ */
+export function configDiff(value: unknown, base: unknown = DEFAULT_CONFIG): unknown {
+  if (value === base) return undefined
+  if (
+    value !== null &&
+    base !== null &&
+    typeof value === 'object' &&
+    typeof base === 'object' &&
+    !Array.isArray(value) &&
+    !Array.isArray(base) &&
+    !(value instanceof Map)
+  ) {
+    const out: Record<string, unknown> = {}
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      const delta = configDiff(inner, (base as Record<string, unknown>)[key])
+      if (delta !== undefined) out[key] = delta
+    }
+    return Object.keys(out).length === 0 ? undefined : out
+  }
+  return canonicalJson(value) === canonicalJson(base) ? undefined : value
+}
+
+/**
  * A cell's id.
  *
- * Derived from the **resolved** config and the horizon, not from the literal
- * overrides object. Two deviations from the obvious definition, both
- * deliberate:
+ * Derived from the horizon and from **how the resolved configuration differs
+ * from the defaults** — not from the literal overrides object, and not from
+ * the whole resolved configuration. Three properties, each of which was
+ * learned by getting it wrong first:
  *
  *  - The horizon is included, because `replay <cellId> <seed>` has to
  *    reproduce a stored result exactly and two cells with the same config but
  *    different horizons do not produce the same result.
- *  - The config is resolved first, so that `{ licensesPerDay: 100 }` — which
- *    is the default — gets the same id as `{}`. Otherwise every one-factor
- *    sweep would re-run the baseline under a different id purely because it
- *    spelled a default value out. The id therefore changes if and only if the
- *    *effective configuration* changes, which is the property that actually
- *    matters: two cells share an id exactly when they would produce identical
- *    runs.
+ *  - The config is **resolved** before the diff is taken, so
+ *    `{ licensesPerDay: 100 }` — which is the default — gets the same id as
+ *    `{}`. Otherwise every one-factor sweep would re-run the baseline under a
+ *    different id purely because it spelled a default value out.
+ *  - Only the **diff** is hashed, so adding a new configuration field with a
+ *    default cannot move the id of any cell that leaves it alone. Hashing the
+ *    whole resolved config meant that adding the seat market to the protocol
+ *    silently orphaned every result the study had already computed. It is
+ *    stored data; it should not be hostage to a schema addition.
+ *
+ * The trade this makes: if a *default value* changes, ids do not change even
+ * though results would. That is what `provenance.protocolVersion` and the
+ * manifest's git SHA are for — a default is a change to the model, and a
+ * change to the model is a change to the code.
  *
  * The label, the axis name and the seed list are all excluded, so renaming a
  * cell or adding seeds to it never invalidates work already done.
  */
 export function cellId(overrides: ConfigOverrides, horizonDays: number): string {
-  return contentHash(canonicalJson({ horizonDays, config: resolveConfig(overrides) })).slice(0, 16)
+  const diff = configDiff(resolveConfig(overrides)) ?? {}
+  return contentHash(canonicalJson({ horizonDays, diff })).slice(0, 16)
 }
 
 export interface MakeCellOptions {

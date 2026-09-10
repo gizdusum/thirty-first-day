@@ -94,7 +94,12 @@ export interface Branch {
 
 export interface Charter {
   readonly id: number
-  readonly ownerId: string
+  /**
+   * Mutable only through a completed seat sale (whitepaper 12). Soulbound
+   * until the one-way transfer switch is thrown, and there is no other code
+   * path that writes it.
+   */
+  ownerId: string
   /** Live branches, in creation order. Length is in `[1, maxBranchesPerCharter]`. */
   branchIds: number[]
   alive: boolean
@@ -103,7 +108,10 @@ export interface Charter {
   /** Licenses bought in the current auction day (whitepaper 8). */
   licensesBoughtToday: number
   readonly genesis: boolean
+  /** The archetype of the charter's *original* owner. Never changes on sale. */
   readonly archetype: Archetype
+  /** Set once the seat has been sold at least once. */
+  transferred: boolean
   /** Tick at which the charter was revoked, if it was. */
   revokedAtTick: number | null
 }
@@ -251,6 +259,51 @@ export interface HunterState {
   reportsThisTick: number
 }
 
+/** A seat offered for sale (whitepaper 12). */
+export interface SeatListing {
+  charterId: number
+  sellerId: string
+  listedAtTick: number
+}
+
+/** One buyer's bid for one listed seat, valid for the tick it was placed in. */
+export interface SeatBid {
+  charterId: number
+  buyerId: string
+  /** The buyer's valuation, in ETH. */
+  valuationEth: Wei
+}
+
+/**
+ * The seat market (whitepaper 12).
+ *
+ * `enabled` is a one-way latch: nothing in the model sets it back to false.
+ * While `charterTransfersEnabledAtDay` is null it never becomes true and every
+ * field here stays at its zero value.
+ */
+export interface SeatMarketState {
+  enabled: boolean
+  enabledAtTick: number | null
+  /** Live listings by charter id. A Map so membership and removal are O(1). */
+  listings: Map<number, SeatListing>
+  bids: SeatBid[]
+  salesThisTick: number
+  /**
+   * Cumulative ETH paid for seats.
+   *
+   * This is the blind spot. Whitepaper 2 says "There is exactly one place ETH
+   * enters or leaves this economy: through trading" — and a seat sale is
+   * capital entering in exchange for a claim on issuance, entirely outside
+   * that one place. `F_n` never sees a wei of it. See F-06.
+   */
+  cumulativeVolumeEth: Wei
+  cumulativeSales: number
+  cumulativeBranchesTransferred: number
+  cumulativeBalanceTransferred: Tokens
+  /** Listings that lapsed unmatched. */
+  cumulativeExpired: number
+}
+
 /** Wave bookkeeping for the synchronized dormancy cohort (whitepaper 10). */
 export interface WaveState {
   /** Index of the wave currently in progress, or the last one seen. 0 = none yet. */
@@ -277,6 +330,9 @@ export interface WorldState {
   withdrawals: WithdrawalWindow
   hunters: HunterState
   wave: WaveState
+  seatMarket: SeatMarketState
+  /** Trailing multiplier ring, for the buyer's expectation model. */
+  multiplierTrailing: { ring: Wad[]; cursor: number; sum: Wad; filled: number }
   charters: Map<number, Charter>
   /** Charter ids by owner, fixed at genesis. Keeps per-agent reads O(1). */
   chartersByOwner: Map<string, number[]>
@@ -318,6 +374,11 @@ export type Action =
       /** Why the tokens are being sold. Ignored on a buy; defaults to 'trader'. */
       origin?: SellOrigin
     }
+  /** Offer a seat for sale. Rejected while charters are soulbound. */
+  | { type: 'listSeat'; charterId: number }
+  | { type: 'unlistSeat'; charterId: number }
+  /** Bid for a listed seat. Valid only for the clearing tick it is placed in. */
+  | { type: 'bidForSeat'; buyerId: string; charterId: number; valuationEth: Wei }
   /**
    * One bounty hunter's submission against one dormant charter.
    *
@@ -454,6 +515,23 @@ export type Event =
       toTeam: Wei
       ethVolumeByOrigin: EthVolumeByOrigin
     }
+  | { type: 'transfersEnabled'; tick: number; day: number }
+  | { type: 'seatListed'; tick: number; charterId: number; sellerId: string }
+  | { type: 'seatListingExpired'; tick: number; charterId: number; sellerId: string }
+  | {
+      type: 'seatSale'
+      tick: number
+      charterId: number
+      sellerId: string
+      /** The archetype of the seat's original owner. */
+      sellerArchetype: Archetype
+      buyerId: string
+      priceEth: Wei
+      reservationEth: Wei
+      valuationEth: Wei
+      branchCount: number
+      accruedBalance: Tokens
+    }
   | { type: 'buyback'; tick: number; ethSpent: Wei; tokensBurned: Tokens }
   | { type: 'polAdded'; tick: number; eth: Wei; standard: Tokens; sharesMinted: bigint }
 
@@ -549,6 +627,22 @@ export interface TickSnapshot {
    */
   dormantCohort: { charterShare: Wad; branchShare: Wad }
   hunterGasSpentEth: Wei
+
+  // -- The seat market (whitepaper 12) -------------------------------------
+  transfersEnabled: boolean
+  seatListingsOpen: number
+  seatSalesThisTick: number
+  cumulativeSeatSales: number
+  /** Cumulative ETH paid for seats — capital the net flow signal never sees. */
+  seatMarketEthVolume: Wei
+  cumulativeBranchesTransferred: number
+  /**
+   * Ownership concentration over branches. Zero when charters are soulbound,
+   * where ownership is one charter per wallet by construction and computing it
+   * would cost every non-transfer cell a full scan for a known answer.
+   */
+  concentrationHHI: Wad
+  largestHolderBranchShare: Wad
 }
 
 export interface TickResult {
@@ -593,6 +687,30 @@ export interface AgentView {
   reportableCharterIds(): number[]
   /** Everything ever minted to this agent, by reason. */
   credits(): Readonly<WalletCredits>
+  /**
+   * A private RNG stream for a named purpose.
+   *
+   * Separate from the stream handed to `onTick`, so that a decision an agent
+   * only makes under some configurations cannot shift the draws it makes under
+   * all of them. That is what lets the seat market be added without moving a
+   * single result in a world where charters are soulbound.
+   */
+  stream(purpose: string): import('./rng/xoshiro128.js').Rng
+  /** Whether seat transfers are currently possible (whitepaper 12). */
+  transfersEnabled(): boolean
+  /** Seats currently listed for sale, in listing order. */
+  seatListings(): readonly SeatListing[]
+  /** Whether this charter is already listed. O(1). */
+  isSeatListed(charterId: number): boolean
+  /** The seller's reservation price for a seat, in ETH. */
+  seatReservationEth(charterId: number): Wei
+  /** What a buyer would pay for a seat, under the documented valuation model. */
+  valueSeat(charterId: number): {
+    discountedBalanceEth: Wei
+    npvEth: Wei
+    totalEth: Wei
+    expectedYieldPerBranchPerDay: Tokens
+  }
   /** The smallest dormant balance worth reporting at the current price. */
   profitabilityFloor(): { tokens: Tokens; unreachable: boolean }
 }

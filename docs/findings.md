@@ -20,6 +20,8 @@ not be left open once the rules had to run.
 | [F-02](#f-02--the-two-p_start-rules-disagree-after-a-revocation-wave) | §7 | The two `P_start` rules can disagree once branches are destroyed, and the falling-price auction would then rise. |
 | [F-03](#f-03--the-daily-license-supply-is-unspecified-and-it-bounds-the-answer) | §8 | The daily license supply is unspecified, and it bounds how violent the dormancy wave is. |
 | [F-04](#f-04--is-cutstep--raisestep-a-protocol-rule-or-a-default) | §5 | "cutStep > raiseStep by design" — a protocol rule, or the intended default? |
+| [F-05](#f-05--does-one-charter-per-wallet-survive-the-transfer-switch) | §6, §12 | Whether one-charter-per-wallet survives transferability, and what accumulation would mean. |
+| [F-06](#f-06--a-seat-sale-is-capital-entering-the-economy-that-the-flow-signal-cannot-see) | §2, §12 | A seat sale moves ETH into the economy without touching the pool, so the flow signal never sees it. |
 
 ---
 
@@ -274,3 +276,138 @@ to configure a symmetric policy. If it is not, the constraint belongs in the
 protocol's own validation and the study's 1:1 cells are hypothetical. If it is,
 the ratchet under directionless volatility is a property worth documenting next
 to the rule that produces it.
+
+---
+
+## F-05 — Does one-charter-per-wallet survive the transfer switch?
+
+**Claim.** Whitepaper §6 limits genesis to one charter per wallet. §12 lets
+charters be transferred. The text does not say whether the limit applies after
+a transfer, and the two readings produce different protocols.
+
+**The text.** §6 describes the genesis mint as one charter per wallet. §12
+describes the one-way switch and what it enables: "selling a charter becomes a
+second exit path: the seat moves whole, branches and balance included. A seat
+sale is an exit with zero sell pressure on $STANDARD; the buyer replaces the
+seller one for one."
+
+"The buyer replaces the seller one for one" is about the seat, not obviously
+about the buyer's holdings. Nothing in either section says whether a wallet
+that already holds a charter may buy another.
+
+**Why it matters.** A branch is a claim on a fixed pro-rata share of every
+epoch's issuance (§6). If seats can be accumulated, issuance concentrates —
+and unlike the license auction, which caps a charter at three purchases a day
+and ten branches in total (§8), the seat market has no cap of its own. The
+per-charter limits stop one *charter* growing without bound; they say nothing
+about one *wallet* holding many charters.
+
+The mechanism is worth being concrete about. The dormancy wave puts a large
+number of seats on the market at once, at prices set by a seller's alternative
+of losing 70% (§10). Those are distressed prices. A buyer with capital during
+that window is buying issuance claims cheaply, in volume, from people whose
+alternative is worse. Whether the protocol permits that is a governance
+question that the transfer switch quietly answers by default, and the answer
+depends on a limit nobody has said applies.
+
+The two readings also differ in what the switch is *for*. Read with the limit,
+transferability is a liquidity feature: it gives a leaving banker a better exit
+and hands the seat to someone new. Read without it, transferability is also a
+consolidation mechanism.
+
+**What the model does.** Implements both, behind
+`config.postTransferCharterLimit`:
+
+- `1` — a wallet holds at most one charter, ever. This is the **default**, as
+  the conservative reading: it changes nothing about §6's invariant, and it
+  means the study's base case does not assume a permission the whitepaper
+  never granted.
+- `Infinity` — seats can be accumulated without limit.
+
+When accumulation is allowed the model measures what happens to it:
+`largestHolderBranchShare` and `concentrationHHI`, a Herfindahl index over
+branch ownership, are recorded in every snapshot. Both are reported as zero —
+not computed — while charters are soulbound, because ownership is then one
+charter per wallet by construction and a full scan every tick would cost every
+non-transfer cell something for a known answer.
+
+`postTransferCharterLimit` is an axis of the study, held at a switch day of 15
+so that the limit is measuring something rather than sitting inert.
+
+**What would settle it.** A sentence in §12 saying whether §6's limit is a
+genesis-allocation rule or a standing invariant. If it is standing, the
+protocol needs to enforce it on transfer, which is a real constraint on the
+contract and not only on the mint. If it is not, the concentration dynamics of
+a distressed seat market during a revocation wave deserve their own paragraph.
+
+---
+
+## F-06 — A seat sale is capital entering the economy that the flow signal cannot see
+
+**Claim.** Whitepaper §2 says "There is exactly one place ETH enters or leaves
+this economy: through trading." §12's transfer switch creates a second place.
+This is a consequence of the switch, not a flaw in it — but it is a
+consequence that nothing in the document notes, and the monetary policy in §5
+is built on the assumption that §2 holds.
+
+**The text.** §2 states the single-entry property. §4 defines the net flow
+signal as `F_n = gross ETH in from buys − gross ETH out from sells, measured at
+the pool`, and §5 drives the issuance multiplier from it. §12 says a seat sale
+is "an exit with zero sell pressure on $STANDARD".
+
+That last phrase is exactly right, and it is the whole point of the feature. A
+banker who retires and sells has to push their balance through the pool; a
+banker who sells their seat does not. The pool is untouched.
+
+But the ETH the buyer pays is not nothing. It is new capital, coming from
+outside, buying a claim on future issuance. It goes wallet to wallet. It never
+crosses the pool boundary, so `F_n` never counts it — and `F_n` is the only
+thing the protocol uses to decide whether the economy is expanding or
+contracting.
+
+**Why it matters.** The signal is a proxy for demand. While charters are
+soulbound the proxy is exact, because §2 holds: every wei of interest in the
+protocol has to arrive through the pool, so measuring the pool measures
+everything. Once seats are transferable, demand for a claim on issuance has a
+second route in, and the proxy becomes partial. A protocol can be attracting
+substantial new capital and cutting its own issuance at the same time, because
+the capital arrived somewhere it was not looking.
+
+**How large.** The model tracks it as its own series, `seatMarketEthVolume`,
+alongside `ethVolumeByOrigin`. On one 45-day run at the whitepaper defaults
+with the switch thrown on day 15 (`pnpm tsx packages/study/scripts/first-look.ts 15 1000000 45`):
+
+| | |
+| --- | --- |
+| Seat market volume, cumulative | **206.7 ETH** |
+| All sell-side pool volume `F_n` did see | 748.7 ETH |
+| The blind spot as a share of it | **27.6%** |
+| The blind spot as a share of the pool's own ETH reserve | **7.9%** |
+
+Rather more than a rounding error, and it arrives concentrated in the days
+around the wave, which is exactly when the multiplier is moving fastest. It is
+also, in that run, directionally *opposed* to what the signal was reading: the
+seat market was absorbing sellers who would otherwise have pushed 30% payouts
+through the pool, so the signal saw less selling than the soulbound arm and
+`m` finished 0.16 higher — while a further 206.7 ETH of genuine buying interest
+went entirely unrecorded.
+
+One seed is one seed. The size of the blind spot is an axis of the study, not a
+number to quote as settled; what is settled is that it exists and is not small.
+
+**What the model does.** Records it separately and never folds it into `F_n`,
+because folding it in would be inventing a protocol rule. `F_n` in the model
+sees exactly what §4 says it sees: gross ETH crossing the pool. A seat sale
+moves ETH directly between two wallets, pays no trading fee, and never reaches
+the fee engine — asserted, against an identical world that did not sell, in
+`seats.spec.ts` and in
+`pnpm tsx packages/study/scripts/seat-sale.ts`.
+
+**What would settle it.** A decision about whether §2's single-entry property
+is a description or a requirement. If it is a description, §2 needs a caveat
+once §12 is live. If it is a requirement — if the policy in §5 depends on
+seeing all capital flow — then either seat sales need to route through the pool
+(which would destroy the zero-sell-pressure property that makes them
+attractive) or the signal needs a second input. That is a design choice with
+real trade-offs, and it should be made deliberately rather than inherited from
+the order in which two sections were written.

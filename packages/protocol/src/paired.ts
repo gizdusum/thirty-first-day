@@ -2,13 +2,16 @@
  * The paired counterfactual, and the attribution arm.
  *
  * The engine is deterministic, so the same world can be run more than once with
- * exactly one thing changed each time. Three arms:
+ * exactly one thing changed each time. Four arms, the last of them conditional:
  *
  *   control        revocation disabled. No charter is ever reportable, dormant
  *                  charters keep their branches and keep accruing.
  *   treatment      whitepaper 10 as written.
  *   noPayoutSell   as treatment, except that the 30% revocation payout is
  *                  minted into the banker's wallet and never sold.
+ *   transferable   as treatment, plus whitepaper 12's one-way transfer switch
+ *                  thrown on the configured day. Built only when
+ *                  `charterTransfersEnabledAtDay` is non-null.
  *
  * `treatment − control` is everything revocation does.
  * `treatment − noPayoutSell` is the part of it caused specifically by payout
@@ -17,6 +20,9 @@
  * who stayed.
  * `noPayoutSell − control` is everything else revocation does: the branch
  * destruction, the burn, and the redistribution.
+ * `transferable − treatment` is what a seat market bought, or cost: revocations
+ * avoided, value rescued from a 70% penalty, branches kept alive — and the ETH
+ * that entered the economy without the net flow signal seeing it (F-06).
  *
  * The thing that makes this sound is that the arms do not share a random
  * sequence. Each agent draws from its own stream, derived from
@@ -24,16 +30,33 @@
  * takes, nothing else in that arm shifts. If that were not true the histories
  * would diverge for reasons unrelated to the lever being pulled and the whole
  * method would be worthless. `study.spec.ts` asserts it directly: with a cohort
- * that never goes dormant, all three arms produce byte-identical histories.
+ * that never goes dormant and never lists a seat, all four arms produce
+ * byte-identical histories.
  */
 
 import { resolveConfig, type Config, type ConfigOverrides } from './config/index.js'
 import { populateGenesisCohort, type Population, type PopulateOptions } from './population.js'
 import { createWorld, type World } from './world.js'
 
-export type Arm = 'control' | 'treatment' | 'noPayoutSell'
+export type Arm = 'control' | 'treatment' | 'noPayoutSell' | 'transferable'
 
+/** The arms that always exist. */
 export const ARMS: readonly Arm[] = ['control', 'treatment', 'noPayoutSell'] as const
+
+/**
+ * Every arm, including the one that is conditional.
+ *
+ * `transferable` is built **only** when `charterTransfersEnabledAtDay` is
+ * non-null. A fourth arm is a third more compute on every cell it applies to,
+ * and cells that do not name the transfer axis must cost exactly what they
+ * cost before it existed.
+ */
+export const ALL_ARMS: readonly Arm[] = [...ARMS, 'transferable'] as const
+
+/** The arms a given configuration calls for. */
+export function armsFor(config: Config): readonly Arm[] {
+  return config.charterTransfersEnabledAtDay === null ? ARMS : ALL_ARMS
+}
 
 export interface ArmsOptions extends PopulateOptions {
   /**
@@ -43,7 +66,7 @@ export interface ArmsOptions extends PopulateOptions {
   populate?: (world: World, arm: Arm) => void
   /** Run every world for this many ticks before returning. Default 0. */
   ticks?: number
-  /** Which arms to build. Default all three. */
+  /** Which arms to build. Defaults to whatever the config calls for. */
   arms?: readonly Arm[]
 }
 
@@ -51,8 +74,11 @@ export interface ArmsRun {
   control: World
   treatment: World
   noPayoutSell: World
+  /** Only present when `charterTransfersEnabledAtDay` is non-null. */
+  transferable: World | null
   populations: Partial<Record<Arm, Population>>
   config: Config
+  arms: readonly Arm[]
   seed: number
 }
 
@@ -65,7 +91,26 @@ export function configForArm(base: Config, arm: Arm): Config {
       return { ...base, revocationEnabled: false }
     case 'noPayoutSell':
       return { ...base, payout: { ...base.payout, reachesPool: false } }
+    case 'transferable':
+      // Revocation is on, exactly as in the treatment arm, and the transfer
+      // switch is thrown on the configured day. The difference against
+      // treatment is what transferability bought — or cost.
+      return base
   }
+}
+
+/**
+ * The config for the three unconditional arms, with the transfer switch off.
+ *
+ * `control`, `treatment` and `noPayoutSell` are all soulbound, whatever the
+ * cell says about transfers: the transfer switch is the thing the fourth arm
+ * varies, so it must be absent from the other three or there is nothing to
+ * difference against.
+ */
+export function soulbound(base: Config): Config {
+  return base.charterTransfersEnabledAtDay === null
+    ? base
+    : { ...base, charterTransfersEnabledAtDay: null }
 }
 
 export function runArms(
@@ -85,12 +130,17 @@ export function runArms(
     )
   }
 
-  const wanted = options.arms ?? ARMS
+  const available = armsFor(resolved)
+  const wanted = options.arms ?? available
   const populations: Partial<Record<Arm, Population>> = {}
   const worlds = {} as Record<Arm, World>
 
-  for (const arm of ARMS) {
-    const world = createWorld(configForArm(resolved, arm), seed)
+  for (const arm of available) {
+    // Every arm but `transferable` is soulbound, so the fourth arm is the only
+    // thing the transfer switch changes.
+    const armConfig =
+      arm === 'transferable' ? configForArm(resolved, arm) : configForArm(soulbound(resolved), arm)
+    const world = createWorld(armConfig, seed)
     worlds[arm] = world
     if (!wanted.includes(arm)) continue
     if (options.populate !== undefined) {
@@ -114,8 +164,10 @@ export function runArms(
     control: worlds.control,
     treatment: worlds.treatment,
     noPayoutSell: worlds.noPayoutSell,
+    transferable: worlds.transferable ?? null,
     populations,
     config: resolved,
+    arms: available,
     seed,
   }
 }

@@ -110,6 +110,22 @@ export function addLiquidity(pool: PoolState, ethIn: Wei, standardIn: Tokens): b
   return sharesMinted
 }
 
+/**
+ * What selling `standardIn` would actually pay out, without touching the pool.
+ *
+ * The real constant-product quote for that size, net of the trading fee — not
+ * `spotPrice x amount`. The two diverge as the size grows, and that divergence
+ * is exactly the point of whitepaper 12: a seat sale is "an exit with zero sell
+ * pressure on $STANDARD", which only means anything if the model can show what
+ * the sell-pressure alternative would have cost.
+ */
+export function quoteEthOut(pool: PoolState, cfg: Config, standardIn: Tokens): Wei {
+  if (standardIn <= 0n) return 0n
+  const grossEth = (pool.ethReserve * standardIn) / (pool.standardReserve + standardIn)
+  const feeEth = mulBps(grossEth, cfg.tradingFeeBps)
+  return grossEth - feeEth
+}
+
 /** $STANDARD required to pair with `ethIn` at the current reserve ratio. */
 export function standardToPair(pool: PoolState, ethIn: Wei): Tokens {
   return (ethIn * pool.standardReserve) / pool.ethReserve

@@ -12,7 +12,10 @@ export {
   runArms,
   runPaired,
   configForArm,
+  armsFor,
+  soulbound,
   ARMS,
+  ALL_ARMS,
   type Arm,
   type ArmsOptions,
   type ArmsRun,
@@ -51,6 +54,9 @@ export {
   type PayoutConfig,
   type HunterConfig,
   type ExternalDemandConfig,
+  type SeatMarketConfig,
+  type BuyerExpectation,
+  type SeatClearingRule,
 } from './config/index.js'
 export { createRng, rngFromState, type Rng } from './rng/xoshiro128.js'
 export { deriveSeed, streamKey } from './rng/derive.js'
@@ -85,10 +91,18 @@ export {
   swapExactEthForStandard,
   swapExactStandardForEth,
   addLiquidity,
+  quoteEthOut,
   standardToPair,
   type SwapResult,
 } from './core/pool.js'
 export { resolutionFeeRate, resolutionPressure } from './core/fees.js'
+export {
+  buyerValuation,
+  clearingPrice,
+  retirementNetTokens,
+  sellerReservationEth,
+  type BuyerValuation,
+} from './core/seats.js'
 export {
   bountyFor,
   escalatedGasEth,
@@ -104,6 +118,7 @@ export {
   RandomTrader,
   BankerAgent,
   BountyHunterPool,
+  SeatBuyerPool,
   type RandomTraderOptions,
 } from './agents/index.js'
 export {
@@ -121,6 +136,9 @@ export {
   type CreditKind,
   type EthVolumeByOrigin,
   type HunterState,
+  type SeatBid,
+  type SeatListing,
+  type SeatMarketState,
   type SellOrigin,
   type WalletCredits,
   type WaveState,

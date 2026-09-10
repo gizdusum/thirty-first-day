@@ -19,26 +19,36 @@ agents making the same decisions, not revoked anybody.
 
 So each point of the grid runs three arms of the same world:
 
-| Arm | What differs |
-| --- | --- |
-| `control` | `revocationEnabled: false`. No charter is ever reportable; dormant charters keep their branches and keep accruing. |
-| `treatment` | Whitepaper §10 as written. |
-| `noPayoutSell` | As treatment, except the 30% revocation payout is minted into the banker's wallet and never sold. |
+| Arm | What differs | Built |
+| --- | --- | --- |
+| `control` | `revocationEnabled: false`. No charter is ever reportable; dormant charters keep their branches and keep accruing. | always |
+| `treatment` | Whitepaper §10 as written. | always |
+| `noPayoutSell` | As treatment, except the 30% revocation payout is minted into the banker's wallet and never sold. | always |
+| `transferable` | As treatment, plus §12's one-way transfer switch thrown on the configured day. | only when `charterTransfersEnabledAtDay` is set |
 
-and reports two differences:
+and reports three differences:
 
 - `delta` = **treatment − control**: everything revocation does.
 - `deltaNoPayout` = **treatment − noPayoutSell**: the part of it caused
   specifically by payout selling reaching the pool.
+- `deltaTransfer` = **transferable − treatment**: what a seat market bought, or
+  cost.
 
 `noPayoutSell − control` is the remainder: the branch destruction, the burn and
 the redistribution, with the sell pressure taken out.
+
+The fourth arm is conditional on purpose. It is a third more compute on every
+cell it applies to, so a cell that leaves the transfer switch at its `null`
+default builds three arms and costs exactly what it cost before §12 existed —
+asserted in `study.spec.ts`. The other three arms are forced soulbound whatever
+the cell says, so the switch is the only thing the fourth arm varies.
 
 This only means anything because the arms do not share a random sequence. Each
 agent draws from its own stream, derived from `(seed, agentId, purpose)`, so a
 draw one arm takes and another does not shifts nothing else. `study.spec.ts` in
 the protocol package asserts it directly: with an all-Committed cohort, where
-revocation is irrelevant, all three arms produce byte-identical histories.
+neither revocation nor a seat market can matter, all four arms produce
+byte-identical histories.
 
 ---
 
@@ -88,6 +98,8 @@ central question. It is an axis, not a default. See
 | `payoutSellOverHours` | 1, 24, 168 | A block or a trickle. |
 | `epochDays` | 0.25, 1, 3 | How often policy reacts. §5 never fixes the epoch. |
 | `cutRaiseRatio` | 1:1, 2:1, 3:1, 5:1 | Whether the policy asymmetry is what ratchets `m` down. |
+| `charterTransfersEnabledAtDay` | null, 0, 7, 15, 21, 25, 29, 31, 45 | When §12's one-way switch is thrown. Below 30 pre-empts the wave; above 30 only catches the tail. |
+| `postTransferCharterLimit` | 1, unlimited | Whether §6's one-charter-per-wallet limit survives transferability ([F-05](./findings.md#f-05--does-one-charter-per-wallet-survive-the-transfer-switch)). Held at a switch day of 15, since the limit is inert while charters are soulbound. |
 
 `Infinity` is not a valid `licensesPerDay` — the daily inventory is an integer
 count — so "unlimited" is 1,000,000, more than 1000 charters could buy at the
@@ -214,6 +226,10 @@ is allowed to decide it implicitly.
    | `multiplierIntegralD31to90` | 0.6 | That step sustained across the whole 60-day window. |
    | `poolPriceD90` | 2e-7 ETH/token | 1% of the opening spot price. |
    | `revocationPayoutVolume` | 0.1 ETH | |
+| `seatMarketEthVolumeD90` | 0.1 ETH | Same as pool volume: below that the blind spot is not worth naming. |
+| `cumulativeSeatSalesD90`, `branchesTransferredD90` | 1 | Seats and branches are integers. |
+| `concentrationHHID90` | 0.001 | On a thousand equal holders the index is 0.001, so this is one holder's worth. |
+| `largestHolderBranchShareD90` | 0.001 | One tenth of one percent of all branches. |
 
 Requiring **both** means the study never reports a difference that is merely
 detectable, and never one that is merely large but indistinguishable from seed
@@ -234,18 +250,41 @@ That re-runs exactly that point with the full hourly history retained and
 prints the whole metric table for all three arms. If a stored result exists for
 that point, `replay` compares against it and says whether it matched.
 
-Cell ids are content-derived: a 128-bit hash of the *resolved* configuration
-plus the horizon. Resolved, so that spelling out a default value does not
-create a new cell; plus the horizon, because a stored result depends on it. The
-id therefore changes if and only if the effective configuration changes, which
-is the property that matters — two cells share an id exactly when they would
-produce identical runs.
+Cell ids are content-derived: a 128-bit hash of the horizon and of **how the
+resolved configuration differs from the defaults**. Resolved, so that spelling
+out a default value does not create a new cell; the horizon, because a stored
+result depends on it; and only the *difference*, so that adding a new
+configuration field cannot move the id of any cell that leaves it alone.
+
+That last property was learned the hard way. Hashing the whole resolved config
+meant that adding the seat market to the protocol orphaned every result the
+study had already computed — stored data held hostage to a schema addition.
+The one-time repair is `pnpm study migrate`, which re-points stored results at
+their current ids by joining on the cell label recorded in the manifest.
+
+The trade: if a *default value* changes, ids do not change even though results
+would. That is what `provenance.protocolVersion` and the manifest's git SHA are
+for — a default is a change to the model, and a change to the model is a change
+to the code.
 
 ```
 pnpm study cells <suite>      # every cell id and what it is
 pnpm study report <suite>     # aggregate the stored JSONL into tables
 pnpm study calibrate          # locate the profitability boundary
 ```
+
+## What the transfer arm reports
+
+Only when the fourth arm was built:
+
+| Metric | What it is |
+| --- | --- |
+| `revocationsAvoided` | Revocations in the treatment arm that did not happen in the transferable one. |
+| `valueRescuedBySale` | The revocation-fee burn that did not happen, in tokens: value §10 would have destroyed. |
+| `sellerProceedsEth` | What sellers actually received, in ETH. |
+| `seatMarketEthVolume` | The same number seen as a blind spot: capital `F_n` never observed ([F-06](./findings.md#f-06--a-seat-sale-is-capital-entering-the-economy-that-the-flow-signal-cannot-see)). |
+| `branchesKeptAlive` | `totalBranches` in the transferable arm less the treatment arm. **Frequently negative**, and the name flatters it: it is a net of two opposing effects — branches saved from revocation, less branches never bought because the seat changed hands and the buyer does not expand. Read it with `revocationsAvoided` and `seatSales`, never alone. |
+| `seatSales`, `concentrationHHI`, `largestHolderBranchShare` | Volume, and what accumulation does to it ([F-05](./findings.md#f-05--does-one-charter-per-wallet-survive-the-transfer-switch)). |
 
 ## Storage
 

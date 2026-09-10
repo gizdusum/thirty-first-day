@@ -16,6 +16,7 @@
  */
 
 import { WAD, tokens } from '../math/fixed.js'
+import type { Archetype } from '../types.js'
 
 /** How the informant bounty is funded. See `dormancyBountySource`. */
 export type BountySource = 'revocationFee' | 'bankerShare'
@@ -116,6 +117,53 @@ export interface ExternalDemandConfig {
   buyBiasWad: bigint
   /** Largest fraction of the relevant balance in one trade, WAD. */
   maxTradeFractionWad: bigint
+}
+
+/** How a buyer forms a view on future issuance. */
+export type BuyerExpectation = 'trailing7dMeanMultiplierFlatN'
+
+/** How a matched pair settles on a price. */
+export type SeatClearingRule = 'midpoint'
+
+/**
+ * The seat market — whitepaper 12.
+ *
+ * Charters launch soulbound (6). A one-way switch can later enable transfers,
+ * after which "selling a charter becomes a second exit path: the seat moves
+ * whole, branches and balance included. A seat sale is an exit with zero sell
+ * pressure on $STANDARD; the buyer replaces the seller one for one."
+ *
+ * Everything here is inert while `charterTransfersEnabledAtDay` is null, which
+ * is the default.
+ */
+export interface SeatMarketConfig {
+  /** How many days of future issuance a buyer prices in. */
+  buyerHorizonDays: number
+  /** Per-day discount rate applied to that stream, WAD. */
+  buyerDiscountRatePerDayWad: bigint
+  /** The buyer's model of future issuance. One model, deliberately. */
+  buyerExpectation: BuyerExpectation
+  clearingRule: SeatClearingRule
+  /** Days an unmatched listing survives before it lapses. */
+  listingExpiryDays: number
+  buyers: {
+    /** How many buyers are in the market. New capital, not existing bankers. */
+    count: number
+    /** ETH each of them brings. */
+    budgetEth: bigint
+    idPrefix: string
+  }
+  /**
+   * Per-day probability that a banker of each archetype lists its seat, WAD.
+   *
+   * **This is the most consequential assumption in the whole arm** and it
+   * deserves to be looked at rather than inherited. Lost is zero by
+   * definition — the keys are gone, so there is nobody to sign a sale.
+   * Committed is zero because a banker who is still buying licenses is not
+   * leaving. Everything else is a judgement about how many quiet holders
+   * would notice a market and take a bid.
+   */
+  sellerDailyPropensityWad: Record<Archetype, bigint>
 }
 
 /** Bounty-hunter economics. Reporting is an action, never an automatic event. */
@@ -220,6 +268,27 @@ export interface Config {
   readonly hunterIdPrefix: string
   readonly externalDemand: ExternalDemandConfig
   readonly externalTraderIdPrefix: string
+
+  // -- The seat market (whitepaper 12) --------------------------------------
+  /**
+   * The one-way switch.
+   *
+   * `null` — charters stay soulbound forever. This is the default, and every
+   * suite that does not name this axis runs exactly as it did before the seat
+   * market existed.
+   * `N` — transfers become possible at the start of day N and can never be
+   * disabled again. Before day N nothing changes at all.
+   */
+  readonly charterTransfersEnabledAtDay: number | null
+  /**
+   * How many charters one wallet may hold once transfers are on.
+   *
+   * Whitepaper 6 limits genesis to one charter per wallet and says nothing
+   * about whether that survives transferability. `1` is the conservative
+   * reading; `Infinity` allows accumulation. See F-05.
+   */
+  readonly postTransferCharterLimit: number
+  readonly seat: SeatMarketConfig
   /**
    * SENSITIVITY OVERRIDE. Normally `null`, and the dormant cohort's branch
    * share emerges from behaviour. Set it to force Tourist and Lost charters to
@@ -599,6 +668,68 @@ export const DEFAULT_CONFIG: Config = {
 
   /** REDACTED. Default "market". */
   externalTraderIdPrefix: 'market',
+
+  // ==========================================================================
+  // The seat market — whitepaper 12
+  // ==========================================================================
+
+  /** Soulbound forever, unless a suite says otherwise. Whitepaper 6 is the
+   *  launch state and 12's switch is an explicit later decision, so `null` is
+   *  the only default that describes the protocol as it ships. */
+  charterTransfersEnabledAtDay: null,
+
+  /** REDACTED. Default 1 — the conservative reading of whitepaper 6. See F-05. */
+  postTransferCharterLimit: 1,
+
+  seat: {
+    /** REDACTED. Default 180 days.
+     *  Long enough that the branch stream dominates the accrued balance in a
+     *  seat's value, short enough that a buyer is not pricing in the whole
+     *  remaining issuance budget. */
+    buyerHorizonDays: 180,
+
+    /** REDACTED. Default 0.05% per day, about 20% annualised.
+     *  A discount rate a buyer of an illiquid on-chain cash flow would plausibly
+     *  demand. It is expressed per day because deriving a daily rate from an
+     *  annual one needs a root, and a root in fixed point is an approximation
+     *  this model does not need to carry. */
+    buyerDiscountRatePerDayWad: WAD / 2_000n,
+
+    /** REDACTED. One model, and a deliberately unclever one: the trailing
+     *  seven-day mean of `m`, with the current branch count held flat. Buyer
+     *  sophistication is a modelling choice, not a fact, and a sensitivity
+     *  sweep should vary it. See `docs/mechanics.md`. */
+    buyerExpectation: 'trailing7dMeanMultiplierFlatN',
+
+    /** Whitepaper 12 says nothing about clearing. Midpoint splits the surplus
+     *  evenly between the two sides, which is the neutral choice. */
+    clearingRule: 'midpoint',
+
+    /** REDACTED. Default 7 days. A listing that has not found a buyer in a
+     *  week is stale; the seller's alternatives have moved. */
+    listingExpiryDays: 7,
+
+    /** REDACTED. 400 buyers with 5 ETH each.
+     *  Sized so that the market can in principle absorb the whole
+     *  dormancy-bound cohort — about 300 charters at the default mix — because
+     *  a market that is capacity-bound by construction would answer the study's
+     *  question by assumption rather than by measurement. Both numbers are
+     *  axes a sweep should vary. */
+    buyers: { count: 400, budgetEth: 5n * WAD, idPrefix: 'seat-buyer' },
+
+    /** REDACTED. See the interface: the most consequential assumption here.
+     *  Lost cannot sell — the keys are gone. Committed is not leaving. The
+     *  Tourist rate of 5%/day means roughly half of them have listed within a
+     *  fortnight of the switch, which assumes a quiet holder notices a new
+     *  market reasonably quickly; that is an assumption, not a measurement. */
+    sellerDailyPropensityWad: {
+      committed: 0n,
+      trader: WAD / 50n,
+      casual: WAD / 50n,
+      tourist: WAD / 20n,
+      lost: 0n,
+    },
+  },
 
   /** SENSITIVITY OVERRIDE — normally null. See the interface. */
   dormantGenesisBranchesOverride: null,

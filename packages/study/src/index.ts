@@ -10,6 +10,7 @@
 export {
   canonicalJson,
   cellId,
+  configDiff,
   contentHash,
   dedupeCells,
   makeCell,
@@ -41,6 +42,8 @@ export {
   PAYOUT_SELL_OVER_HOURS,
   EPOCH_DAYS,
   CUT_RAISE_RATIO,
+  CHARTER_TRANSFERS,
+  POST_TRANSFER_CHARTER_LIMIT,
   type Axis,
   type Level,
 } from './config/axes.js'
@@ -50,13 +53,16 @@ export {
   armMetrics,
   ghostSummary,
   readMetric,
+  readMetricOrNull,
   subtractMetrics,
+  transferMetrics,
   treatmentMetrics,
   METRIC_PATHS,
   type ArmMetrics,
   type BurnSplit,
   type GhostSummary,
   type Metrics,
+  type TransferMetrics,
   type TreatmentMetrics,
 } from './metrics.js'
 export { runOne, toRunResult, PROTOCOL_VERSION, type DetailedRun, type RunResult, type RunOptions } from './runCell.js'

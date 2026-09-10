@@ -31,6 +31,7 @@ import {
 import { resolutionFeeRate, resolutionPressure } from './core/fees.js'
 import { buildLicenseSchedule, licenseFloorPrice, licenseStartPrice } from './core/licenses.js'
 import { profitabilityFloor } from './core/hunters.js'
+import { buyerValuation, clearingPrice, sellerReservationEth } from './core/seats.js'
 import { assignArchetypes, genesisBranchesFor } from './cohort.js'
 import {
   accrueIssuance,
@@ -60,6 +61,8 @@ import {
   type Event,
   type EthVolumeByOrigin,
   type RejectedAction,
+  type SeatBid,
+  type SeatListing,
   type SellOrigin,
   type TickResult,
   type TickSnapshot,
@@ -95,6 +98,17 @@ export interface World {
   /** One branch's nominal issuance over one day at the current `m` and `N`. */
   yieldPerBranchPerDay(): Tokens
   isReportable(charterId: number): boolean
+  /** Whether seat transfers are possible (whitepaper 12). One-way. */
+  transfersEnabled(): boolean
+  /** The seller's reservation price for a seat, in ETH. */
+  seatReservationEth(charterId: number): Wei
+  /** What a buyer would pay for a seat, under the documented valuation model. */
+  valueSeat(charterId: number): {
+    discountedBalanceEth: Wei
+    npvEth: Wei
+    totalEth: Wei
+    expectedYieldPerBranchPerDay: Tokens
+  }
   actions: {
     checkIn(charterId: number): void
     buyLicense(charterId: number): void
@@ -102,6 +116,9 @@ export interface World {
     withdraw(charterId: number, amount: Tokens): void
     reportDormant(reporterId: string, charterId: number): void
     swap(agentId: string, direction: 'buy' | 'sell', amountIn: bigint, origin?: SellOrigin): void
+    listSeat(charterId: number): void
+    unlistSeat(charterId: number): void
+    bidForSeat(buyerId: string, charterId: number, valuationEth: bigint): void
   }
 }
 
@@ -216,6 +233,8 @@ class StandardReserveWorld implements World {
     state.wave.branchesRetiredThisTick = 0
     state.wave.branchesOpenedThisTick = 0
     state.hunters.reportsThisTick = 0
+    state.seatMarket.salesThisTick = 0
+    state.seatMarket.bids.length = 0
     state.tickEthVolumeByOrigin = zeroVolume()
     state.tickRedistributed = { resolutionFee: 0n, revocationFee: 0n }
 
@@ -230,8 +249,12 @@ class StandardReserveWorld implements World {
     state.day = Math.floor(t / cfg.ticksPerDay)
     state.epoch = Math.floor(t / ticksPerEpoch(cfg))
 
-    // 3. Open a new auction day (whitepaper 7).
-    if (t % cfg.ticksPerDay === 0) this.openAuctionDay(state.day)
+    // 3. Open a new auction day (whitepaper 7), and throw the transfer switch
+    //    if this is the day it is due (whitepaper 12).
+    if (t % cfg.ticksPerDay === 0) {
+      this.maybeEnableTransfers(state.day)
+      this.openAuctionDay(state.day)
+    }
 
     // 4. One hour of the issuance stream (whitepaper 5, 6).
     const issued = accrueIssuance(state, cfg)
@@ -288,8 +311,15 @@ class StandardReserveWorld implements World {
       }
     }
 
-    // 8. Close the epoch if this hour ends one (whitepaper 4, 5, 11).
+    // 8. Clear the seat market, once a day, after everyone has listed and bid.
+    if (state.seatMarket.enabled && t % cfg.ticksPerDay === 0) this.clearSeatMarket()
+
+    // 9. Close the epoch if this hour ends one (whitepaper 4, 5, 11).
     if ((t + 1) % ticksPerEpoch(cfg) === 0) this.closeEpoch()
+
+    // 10. Roll the trailing multiplier window, for the buyer expectation model.
+    //     O(1), and only maintained where a buyer could ever read it.
+    if (cfg.charterTransfersEnabledAtDay !== null) this.recordMultiplier()
 
     state.tick = t + 1
     const snapshot = this.snapshot()
@@ -316,6 +346,10 @@ class StandardReserveWorld implements World {
       amountIn: bigint,
       origin: SellOrigin = 'trader',
     ): void => this.apply({ type: 'swap', agentId, direction, amountIn, origin }),
+    listSeat: (charterId: number): void => this.apply({ type: 'listSeat', charterId }),
+    unlistSeat: (charterId: number): void => this.apply({ type: 'unlistSeat', charterId }),
+    bidForSeat: (buyerId: string, charterId: number, valuationEth: bigint): void =>
+      this.apply({ type: 'bidForSeat', buyerId, charterId, valuationEth }),
   }
 
   apply(action: Action): void {
@@ -334,6 +368,17 @@ class StandardReserveWorld implements World {
         return this.doSubmitReport(action)
       case 'swap':
         return this.doSwap(action.agentId, action.direction, action.amountIn, action.origin)
+      case 'listSeat':
+        return this.doListSeat(action.charterId)
+      case 'unlistSeat':
+        return this.doUnlistSeat(action.charterId)
+      case 'bidForSeat':
+        return this.doBidForSeat(action)
+      default:
+        throw new ProtocolError(
+          'UNKNOWN_ACTION',
+          `no such action: ${(action as { type: string }).type}`,
+        )
     }
   }
 
@@ -765,6 +810,334 @@ class StandardReserveWorld implements World {
   }
 
   // -------------------------------------------------------------------------
+  // The seat market — whitepaper 12
+  // -------------------------------------------------------------------------
+
+  transfersEnabled(): boolean {
+    return this.state.seatMarket.enabled
+  }
+
+  /**
+   * The one-way switch.
+   *
+   * Whitepaper 12: the team makes this call once and cannot undo it. The latch
+   * lives in state, is only ever written here, and is only ever written true —
+   * there is no code path anywhere in the package that sets it back.
+   */
+  private maybeEnableTransfers(day: number): void {
+    const cfg = this.config
+    const market = this.state.seatMarket
+    if (market.enabled) return
+    if (cfg.charterTransfersEnabledAtDay === null) return
+    if (day < cfg.charterTransfersEnabledAtDay) return
+    market.enabled = true
+    market.enabledAtTick = this.state.tick
+    this.events.push({ type: 'transfersEnabled', tick: this.state.tick, day })
+  }
+
+  private recordMultiplier(): void {
+    const trailing = this.state.multiplierTrailing
+    trailing.sum -= trailing.ring[trailing.cursor] as bigint
+    trailing.ring[trailing.cursor] = this.state.policy.multiplier
+    trailing.sum += this.state.policy.multiplier
+    trailing.cursor = (trailing.cursor + 1) % trailing.ring.length
+    if (trailing.filled < trailing.ring.length) trailing.filled += 1
+  }
+
+  /**
+   * The buyer's view of future `m`.
+   *
+   * `buyerExpectation: 'trailing7dMeanMultiplierFlatN'` — the trailing
+   * seven-day mean of the multiplier, with the branch count held at its
+   * current value. Deliberately unclever. Buyer sophistication is a modelling
+   * choice and an axis a sweep should vary; see `docs/mechanics.md`.
+   */
+  private expectedMultiplier(): bigint {
+    const trailing = this.state.multiplierTrailing
+    if (trailing.filled === 0) return this.state.policy.multiplier
+    return trailing.sum / BigInt(trailing.filled)
+  }
+
+  private currentResolutionPressure(): bigint {
+    return resolutionPressure(
+      this.config,
+      this.state.withdrawals.trailingTotal,
+      this.state.ledger.totalAccrued,
+    )
+  }
+
+  /** What a buyer would pay for a seat, under the documented valuation model. */
+  valueSeat(charterId: number): ReturnType<typeof buyerValuation> {
+    const charter = this.liveCharter(charterId)
+    return buyerValuation(
+      this.config,
+      this.state.pool,
+      charterAccrued(this.state, charter),
+      charter.branchIds.length,
+      this.currentResolutionPressure(),
+      this.expectedMultiplier(),
+      this.state.totalBranches,
+    )
+  }
+
+  seatReservationEth(charterId: number): Wei {
+    const charter = this.liveCharter(charterId)
+    return sellerReservationEth(
+      this.config,
+      this.state.pool,
+      charterAccrued(this.state, charter),
+      this.currentResolutionPressure(),
+    )
+  }
+
+  /** How many live charters an address holds. */
+  private charterCountOf(ownerId: string): number {
+    const owned = this.state.chartersByOwner.get(ownerId)
+    if (owned === undefined) return 0
+    let count = 0
+    for (const id of owned) if (this.state.charters.get(id)?.alive === true) count += 1
+    return count
+  }
+
+  private requireTransfers(): void {
+    if (!this.state.seatMarket.enabled) {
+      throw new ProtocolError(
+        'SOULBOUND',
+        'charters are soulbound in this world (whitepaper 6); the transfer switch has not been thrown',
+      )
+    }
+  }
+
+  private doListSeat(charterId: number): void {
+    this.requireTransfers()
+    const charter = this.liveCharter(charterId)
+    const market = this.state.seatMarket
+    if (market.listings.has(charterId)) {
+      throw new ProtocolError('ALREADY_LISTED', `charter ${charterId} is already listed`)
+    }
+    // Listing is a market action, not a charter interaction: it does not reset
+    // the dormancy clock. A seat that is listed but never sold is still
+    // reportable on schedule.
+    market.listings.set(charterId, {
+      charterId,
+      sellerId: charter.ownerId,
+      listedAtTick: this.state.tick,
+    })
+    this.events.push({
+      type: 'seatListed',
+      tick: this.state.tick,
+      charterId,
+      sellerId: charter.ownerId,
+    })
+  }
+
+  private doUnlistSeat(charterId: number): void {
+    this.requireTransfers()
+    const market = this.state.seatMarket
+    if (!market.listings.delete(charterId)) {
+      throw new ProtocolError('NOT_LISTED', `charter ${charterId} is not listed`)
+    }
+  }
+
+  private doBidForSeat(action: Extract<Action, { type: 'bidForSeat' }>): void {
+    this.requireTransfers()
+    const market = this.state.seatMarket
+    if (!market.listings.has(action.charterId)) {
+      throw new ProtocolError('NOT_LISTED', `charter ${action.charterId} is not listed`)
+    }
+    if (action.valuationEth <= 0n) throw new ProtocolError('BAD_AMOUNT', 'a bid must be positive')
+    const wallet = this.state.wallets.get(action.buyerId)
+    if (wallet === undefined) throw new ProtocolError('NO_WALLET', `no wallet for ${action.buyerId}`)
+    market.bids.push({
+      charterId: action.charterId,
+      buyerId: action.buyerId,
+      valuationEth: action.valuationEth,
+    })
+  }
+
+  /**
+   * Clearing, once a day.
+   *
+   * Deliberately simple, and stated exactly because "match highest bid against
+   * lowest reservation" is ambiguous when seats are not fungible — they carry
+   * different balances and different branch counts, so a bid is necessarily
+   * for a particular seat.
+   *
+   * Listings are taken cheapest reservation first; for each, the highest live
+   * bid from a buyer who is still eligible and still funded wins if it clears
+   * the reservation, and the pair settles at the midpoint. A seat is
+   * indivisible and there are no partial fills. A buyer takes at most one seat
+   * per clearing round, whatever `postTransferCharterLimit` allows in total —
+   * one round is one day, and a wallet buying several seats in a single day is
+   * a level of activity this market does not model. Unmatched listings roll
+   * over until `listingExpiryDays` have passed.
+   */
+  private clearSeatMarket(): void {
+    const cfg = this.config
+    const state = this.state
+    const market = state.seatMarket
+    if (market.listings.size === 0) return
+
+    const pressure = this.currentResolutionPressure()
+    const priced = [...market.listings.values()]
+      .map((listing) => {
+        const charter = state.charters.get(listing.charterId)
+        if (charter === undefined || !charter.alive) return null
+        const balance = charterAccrued(state, charter)
+        return {
+          listing,
+          charter,
+          balance,
+          reservationEth: sellerReservationEth(cfg, state.pool, balance, pressure),
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      .sort((a, b) =>
+        a.reservationEth === b.reservationEth
+          ? a.listing.charterId - b.listing.charterId
+          : a.reservationEth < b.reservationEth
+            ? -1
+            : 1,
+      )
+
+    const spent = new Set<string>()
+    for (const entry of priced) {
+      let best: SeatBid | null = null
+      for (const bid of market.bids) {
+        if (bid.charterId !== entry.listing.charterId) continue
+        if (spent.has(bid.buyerId)) continue
+        const wallet = state.wallets.get(bid.buyerId)
+        if (wallet === undefined) continue
+        if (this.charterCountOf(bid.buyerId) >= cfg.postTransferCharterLimit) continue
+        if (bid.valuationEth < entry.reservationEth) continue
+        const price = clearingPrice(cfg, bid.valuationEth, entry.reservationEth)
+        if (wallet.eth < price) continue
+        if (
+          best === null ||
+          bid.valuationEth > best.valuationEth ||
+          (bid.valuationEth === best.valuationEth && bid.buyerId < best.buyerId)
+        ) {
+          best = bid
+        }
+      }
+      if (best === null) continue
+      this.settleSeatSale(entry.charter, entry.balance, best, entry.reservationEth)
+      spent.add(best.buyerId)
+    }
+
+    // Expire stale listings, and drop any whose charter is gone.
+    const expiryTicks = cfg.seat.listingExpiryDays * cfg.ticksPerDay
+    for (const listing of [...market.listings.values()]) {
+      const charter = state.charters.get(listing.charterId)
+      if (charter === undefined || !charter.alive || charter.ownerId !== listing.sellerId) {
+        market.listings.delete(listing.charterId)
+        continue
+      }
+      if (state.tick - listing.listedAtTick >= expiryTicks) {
+        market.listings.delete(listing.charterId)
+        market.cumulativeExpired += 1
+        this.events.push({
+          type: 'seatListingExpired',
+          tick: state.tick,
+          charterId: listing.charterId,
+          sellerId: listing.sellerId,
+        })
+      }
+    }
+  }
+
+  /**
+   * A completed sale.
+   *
+   * The seat moves whole. No branch is destroyed, no balance is touched, and
+   * the ETH goes buyer to seller directly — it never enters the pool, pays no
+   * trading fee, and never reaches the fee engine. That is the whole of
+   * whitepaper 12's claim that a seat sale is "an exit with zero sell pressure
+   * on $STANDARD", and it is also why `F_n` never sees the capital. See F-06.
+   */
+  private settleSeatSale(
+    charter: Charter,
+    balance: Tokens,
+    bid: SeatBid,
+    reservationEth: Wei,
+  ): void {
+    const state = this.state
+    const price = clearingPrice(this.config, bid.valuationEth, reservationEth)
+    const buyerWallet = this.state.wallets.get(bid.buyerId)
+    if (buyerWallet === undefined || buyerWallet.eth < price) return
+    const sellerId = charter.ownerId
+    const sellerWallet = this.ensureWallet(sellerId)
+
+    buyerWallet.eth -= price
+    sellerWallet.eth += price
+
+    // Ownership moves; the branches and the accrued balance do not move at all.
+    const previousOwned = state.chartersByOwner.get(sellerId)
+    if (previousOwned !== undefined) {
+      const at = previousOwned.indexOf(charter.id)
+      if (at >= 0) previousOwned.splice(at, 1)
+    }
+    const buyerOwned = state.chartersByOwner.get(bid.buyerId) ?? []
+    buyerOwned.push(charter.id)
+    state.chartersByOwner.set(bid.buyerId, buyerOwned)
+
+    charter.ownerId = bid.buyerId
+    charter.transferred = true
+    // The buyer replaces the seller one for one, so the dormancy clock starts
+    // over from the moment the seat changes hands (whitepaper 10, 12).
+    charter.lastInteractionTick = state.tick
+
+    const market = state.seatMarket
+    market.salesThisTick += 1
+    market.cumulativeSales += 1
+    market.cumulativeVolumeEth += price
+    market.cumulativeBranchesTransferred += charter.branchIds.length
+    market.cumulativeBalanceTransferred += balance
+    market.listings.delete(charter.id)
+
+    this.events.push({
+      type: 'seatSale',
+      tick: state.tick,
+      charterId: charter.id,
+      sellerId,
+      sellerArchetype: charter.archetype,
+      buyerId: bid.buyerId,
+      priceEth: price,
+      reservationEth,
+      valuationEth: bid.valuationEth,
+      branchCount: charter.branchIds.length,
+      accruedBalance: balance,
+    })
+  }
+
+  /**
+   * Ownership concentration over branches.
+   *
+   * Skipped entirely while charters are soulbound: ownership is then one
+   * charter per wallet by construction, so the answer is known and a full scan
+   * every tick would cost every non-transfer cell something for nothing.
+   */
+  private concentration(): { hhi: bigint; largestShare: bigint } {
+    if (this.config.charterTransfersEnabledAtDay === null) return { hhi: 0n, largestShare: 0n }
+    const state = this.state
+    if (state.totalBranches <= 0) return { hhi: 0n, largestShare: 0n }
+    const byOwner = new Map<string, number>()
+    for (const charter of state.charters.values()) {
+      if (!charter.alive) continue
+      byOwner.set(charter.ownerId, (byOwner.get(charter.ownerId) ?? 0) + charter.branchIds.length)
+    }
+    const total = BigInt(state.totalBranches)
+    let hhi = 0n
+    let largest = 0n
+    for (const branches of byOwner.values()) {
+      const share = (BigInt(branches) * WAD) / total
+      hhi += mulWad(share, share)
+      if (share > largest) largest = share
+    }
+    return { hhi, largestShare: largest }
+  }
+
+  // -------------------------------------------------------------------------
   // Auction day
   // -------------------------------------------------------------------------
 
@@ -1071,6 +1444,24 @@ class StandardReserveWorld implements World {
           unreachable: state.hunters.profitabilityFloorUnreachable,
         }
       },
+      stream(purpose: string): Rng {
+        return world.rngFor(agentId, purpose)
+      },
+      transfersEnabled(): boolean {
+        return state.seatMarket.enabled
+      },
+      seatListings(): readonly SeatListing[] {
+        return [...state.seatMarket.listings.values()]
+      },
+      isSeatListed(charterId: number): boolean {
+        return state.seatMarket.listings.has(charterId)
+      },
+      seatReservationEth(charterId: number): Wei {
+        return world.seatReservationEth(charterId)
+      },
+      valueSeat(charterId: number) {
+        return world.valueSeat(charterId)
+      },
     }
   }
 
@@ -1145,6 +1536,7 @@ class StandardReserveWorld implements World {
     const d = state.ledger.totalAccrued
     const p = resolutionPressure(cfg, w, d)
     const scan = this.dormancyScan()
+    const crowding = this.concentration()
 
     return {
       tick: state.tick,
@@ -1213,6 +1605,15 @@ class StandardReserveWorld implements World {
           state.totalBranches > 0 ? shareWad(scan.reportableBranches, state.totalBranches) : 0n,
       },
       hunterGasSpentEth: state.hunters.cumulativeGasSpentEth,
+
+      transfersEnabled: state.seatMarket.enabled,
+      seatListingsOpen: state.seatMarket.listings.size,
+      seatSalesThisTick: state.seatMarket.salesThisTick,
+      cumulativeSeatSales: state.seatMarket.cumulativeSales,
+      seatMarketEthVolume: state.seatMarket.cumulativeVolumeEth,
+      cumulativeBranchesTransferred: state.seatMarket.cumulativeBranchesTransferred,
+      concentrationHHI: crowding.hhi,
+      largestHolderBranchShare: crowding.largestShare,
     }
   }
 }
@@ -1278,8 +1679,20 @@ function genesis(cfg: Config, cohortRng: Rng): WorldState {
       licensesBoughtToday: 0,
       genesis: true,
       archetype,
+      transferred: false,
       revokedAtTick: null,
     })
+  }
+
+  // Seat buyers are new capital entering the ecosystem, not existing bankers.
+  // Their wallets exist from genesis so that ids and balances are stable, but
+  // nothing can be bought until the transfer switch is thrown.
+  if (cfg.charterTransfersEnabledAtDay !== null) {
+    for (let b = 0; b < cfg.seat.buyers.count; b++) {
+      const id = `${cfg.seat.buyers.idPrefix}-${b}`
+      wallets.set(id, { eth: cfg.seat.buyers.budgetEth, standard: 0n })
+      credits.set(id, { withdrawal: 0n, retirement: 0n, revocationPayout: 0n, bounty: 0n })
+    }
   }
 
   // Hunters hold ETH so that gas is a real constraint on them.
@@ -1350,6 +1763,24 @@ function genesis(cfg: Config, cohortRng: Rng): WorldState {
       cumulativeReportsAttempted: 0,
       cumulativeReportsLanded: 0,
       reportsThisTick: 0,
+    },
+    seatMarket: {
+      enabled: false,
+      enabledAtTick: null,
+      listings: new Map(),
+      bids: [],
+      salesThisTick: 0,
+      cumulativeVolumeEth: 0n,
+      cumulativeSales: 0,
+      cumulativeBranchesTransferred: 0,
+      cumulativeBalanceTransferred: 0n,
+      cumulativeExpired: 0,
+    },
+    multiplierTrailing: {
+      ring: new Array<bigint>(7 * cfg.ticksPerDay).fill(0n),
+      cursor: 0,
+      sum: 0n,
+      filled: 0,
     },
     wave: {
       index: 0,

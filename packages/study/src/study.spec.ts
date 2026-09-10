@@ -19,10 +19,18 @@ import { join, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_CONFIG, WAD, type ConfigOverrides } from '@thirty-first-day/protocol'
+import { DEFAULT_CONFIG, WAD, resolveConfig, type ConfigOverrides } from '@thirty-first-day/protocol'
 
 import { summarise, summariseCell, toDisplay } from './aggregate.js'
-import { cellId, canonicalJson, contentHash, dedupeCells, makeCell, seedRange } from './cells.js'
+import {
+  cellId,
+  canonicalJson,
+  configDiff,
+  contentHash,
+  dedupeCells,
+  makeCell,
+  seedRange,
+} from './cells.js'
 import { baselineOverrides, mixForDormancyRate, STATIC_AXES } from './config/axes.js'
 import { DEMAND, DEMAND_REGIMES } from './config/demand.js'
 import { executeSuite, pendingTasks } from './execute.js'
@@ -108,6 +116,27 @@ describe('cell identity', () => {
     )
   })
 
+  it('does not move when the configuration schema gains a defaulted field', () => {
+    // The property that keeps stored results reachable. Hashing the whole
+    // resolved config meant that adding the seat market to the protocol
+    // orphaned every result the study had already computed; hashing only the
+    // difference from the defaults means a new knob nobody touched is
+    // invisible.
+    expect(configDiff(resolveConfig({}))).toBeUndefined()
+    const resolved = resolveConfig({}) as unknown as Record<string, unknown>
+    const defaults = DEFAULT_CONFIG as unknown as Record<string, unknown>
+    expect(configDiff({ ...resolved, brandNewKnob: 42 }, { ...defaults, brandNewKnob: 42 })).toBeUndefined()
+    // A nested default is just as invisible.
+    expect(
+      configDiff(
+        { ...resolved, seat: { ...(resolved['seat'] as object), brandNewKnob: 7 } },
+        { ...defaults, seat: { ...(defaults['seat'] as object), brandNewKnob: 7 } },
+      ),
+    ).toBeUndefined()
+    // But a knob that actually moved is not.
+    expect(configDiff({ ...resolved, licensesPerDay: 7 })).toEqual({ licensesPerDay: 7 })
+  })
+
   it('serialises bigints and sorts keys canonically', () => {
     expect(canonicalJson({ b: 1n, a: 2 })).toBe('{"a":2,"b":"1n"}')
     expect(canonicalJson({ a: undefined, b: 1 })).toBe('{"b":1}')
@@ -154,7 +183,7 @@ describe('replay', () => {
       }
       expect(stringify(replayed.metrics.treatment)).toBe(stringify(readBack[0]!.metrics.treatment))
       // Keeping the hourly history changes nothing but what is retained.
-      expect(replayed.hourly?.treatment.length).toBe(SMALL_HORIZON * 24)
+      expect(replayed.hourly?.treatment?.length).toBe(SMALL_HORIZON * 24)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -165,6 +194,50 @@ describe('replay', () => {
     // the way back in.
     const value = { a: 2n ** 200n, b: [-1n, 0n], c: 'plain', d: '12n', e: '~12n', f: '~~-3n', g: '~x' }
     expect(parse<typeof value>(stringify(value))).toEqual(value)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The fourth arm — whitepaper 12
+// ---------------------------------------------------------------------------
+
+describe('the transferable arm', () => {
+  it('is not built at all when the transfer switch is null', () => {
+    const run = runOne({ ...SMALL }, 3, SMALL_HORIZON)
+    expect(run.arms).toEqual(['control', 'treatment', 'noPayoutSell'])
+    expect(run.metrics.levels.transferable).toBeNull()
+    expect(run.metrics.deltaTransfer).toBeNull()
+    expect(run.metrics.transfer).toBeNull()
+    expect(Object.keys(run.worlds).sort()).toEqual(['control', 'noPayoutSell', 'treatment'])
+  })
+
+  it('is built, and reported, when the switch is set', () => {
+    const run = runOne(
+      { ...SMALL, charterTransfersEnabledAtDay: 2 },
+      3,
+      SMALL_HORIZON,
+    )
+    expect(run.arms).toEqual(['control', 'treatment', 'noPayoutSell', 'transferable'])
+    expect(run.metrics.levels.transferable).not.toBeNull()
+    expect(run.metrics.deltaTransfer).not.toBeNull()
+    expect(run.metrics.transfer?.transfersEnabledOnDay).toBe(2n)
+    // The other three arms stay soulbound, so the switch is the only difference.
+    expect(run.worlds.control?.config.charterTransfersEnabledAtDay).toBeNull()
+    expect(run.worlds.treatment?.config.charterTransfersEnabledAtDay).toBeNull()
+    expect(run.worlds.transferable?.config.charterTransfersEnabledAtDay).toBe(2)
+  })
+
+  it('costs a soulbound cell nothing: same arms, same metrics, same id', () => {
+    // "Cells that do not set it must cost exactly what they cost today."
+    const withoutMention = runOne({ ...SMALL }, 9, SMALL_HORIZON)
+    const explicitNull = runOne(
+      { ...SMALL, charterTransfersEnabledAtDay: null },
+      9,
+      SMALL_HORIZON,
+    )
+    expect(explicitNull.cellId).toBe(withoutMention.cellId)
+    expect(explicitNull.arms).toEqual(withoutMention.arms)
+    expect(stringify(explicitNull.metrics)).toBe(stringify(withoutMention.metrics))
   })
 })
 
@@ -276,7 +349,7 @@ describe('the experimental design', () => {
     expect(totalRuns(baseline)).toBe(200)
     // One factor at a time, with the baseline level shared across axes.
     expect(ofat.cells.length).toBeGreaterThan(30)
-    expect(ofat.cells.length).toBeLessThan(60)
+    expect(ofat.cells.length).toBeLessThan(80)
     // Dedup folds each axis's baseline level into one shared cell, but the
     // level join keeps every axis complete for reporting.
     expect(ofat.levels.length).toBeGreaterThan(ofat.cells.length)

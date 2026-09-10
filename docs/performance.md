@@ -187,6 +187,12 @@ about the runner, not a tuning detail: the naive default costs about 20% here.
 | Suite A (200 runs) | 8.5 min, measured |
 | Suite B (40 cells x 50 seeds = 2,000 runs) | ~92 min, measured rate |
 | Suites C and D at the specified sizes | ~7 h and ~70 min respectively at this rate |
+| A cell that names whitepaper §12's transfer switch | a third more: four arms, not three |
+
+The fourth arm is conditional for that reason. A cell that leaves
+`charterTransfersEnabledAtDay` at its `null` default builds three arms and
+costs exactly what it cost before the seat market was modelled — asserted in
+`study.spec.ts` rather than assumed.
 
 The gap between 16 s isolated and 25 s under load is contention, not memory:
 nine concurrent worlds hold a few hundred megabytes between them, well inside

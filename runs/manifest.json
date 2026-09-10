@@ -1,0 +1,329 @@
+{
+  "suites": {
+    "baseline": {
+      "suite": "baseline",
+      "description": "The baseline cell at many seeds. Establishes the central estimate and the seed-variance noise band.",
+      "protocolVersion": "0.0.0",
+      "gitSha": "unknown",
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "node": "v25.6.1"
+      },
+      "horizonDays": 90,
+      "gasBoundaryWei": "3332518648766099",
+      "cells": [
+        {
+          "id": "3b2ab0b6e0d949fd",
+          "label": "baseline",
+          "axis": null,
+          "level": "baseline",
+          "seeds": 200
+        }
+      ],
+      "totalRuns": 200,
+      "startedAt": "2026-09-10T21:13:35.295Z",
+      "finishedAt": "2026-09-10T21:22:25.975Z"
+    },
+    "ofat": {
+      "suite": "ofat",
+      "description": "One factor at a time across its full range, everything else at baseline. Produces the sensitivity ranking.",
+      "protocolVersion": "0.0.0",
+      "gitSha": "unknown",
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "node": "v25.6.1"
+      },
+      "horizonDays": 90,
+      "gasBoundaryWei": "3332518648766099",
+      "cells": [
+        {
+          "id": "f9dec37b7d9fed6a",
+          "label": "licensesPerDay=25",
+          "axis": "licensesPerDay",
+          "level": "25",
+          "seeds": 50
+        },
+        {
+          "id": "b7e02bcdf9388345",
+          "label": "licensesPerDay=50",
+          "axis": "licensesPerDay",
+          "level": "50",
+          "seeds": 50
+        },
+        {
+          "id": "3b2ab0b6e0d949fd",
+          "label": "licensesPerDay=100",
+          "axis": "licensesPerDay",
+          "level": "100",
+          "seeds": 50
+        },
+        {
+          "id": "f6ddc609ebc293b2",
+          "label": "licensesPerDay=200",
+          "axis": "licensesPerDay",
+          "level": "200",
+          "seeds": 50
+        },
+        {
+          "id": "90f1e6d07758734c",
+          "label": "licensesPerDay=400",
+          "axis": "licensesPerDay",
+          "level": "400",
+          "seeds": 50
+        },
+        {
+          "id": "7003429af2438ae2",
+          "label": "licensesPerDay=unlimited",
+          "axis": "licensesPerDay",
+          "level": "unlimited",
+          "seeds": 50
+        },
+        {
+          "id": "9ad14cad08fe4bfc",
+          "label": "perCharterLicenseLimit=1",
+          "axis": "perCharterLicenseLimit",
+          "level": "1",
+          "seeds": 50
+        },
+        {
+          "id": "cf52469a173fa565",
+          "label": "perCharterLicenseLimit=5",
+          "axis": "perCharterLicenseLimit",
+          "level": "5",
+          "seeds": 50
+        },
+        {
+          "id": "0fca1f385e2be541",
+          "label": "perCharterLicenseLimit=10",
+          "axis": "perCharterLicenseLimit",
+          "level": "10",
+          "seeds": 50
+        },
+        {
+          "id": "4b0c040a1ba58267",
+          "label": "dormancyRate=0.05",
+          "axis": "dormancyRate",
+          "level": "0.05",
+          "seeds": 50
+        },
+        {
+          "id": "a45f1473615fa4a9",
+          "label": "dormancyRate=0.15",
+          "axis": "dormancyRate",
+          "level": "0.15",
+          "seeds": 50
+        },
+        {
+          "id": "622622249f2af51e",
+          "label": "dormancyRate=0.45",
+          "axis": "dormancyRate",
+          "level": "0.45",
+          "seeds": 50
+        },
+        {
+          "id": "2f06f25cf34e9bca",
+          "label": "dormancyRate=0.60",
+          "axis": "dormancyRate",
+          "level": "0.60",
+          "seeds": 50
+        },
+        {
+          "id": "b827d8fccc0b0215",
+          "label": "demandRegime=none",
+          "axis": "demandRegime",
+          "level": "none",
+          "seeds": 50
+        },
+        {
+          "id": "f405861e6991d694",
+          "label": "demandRegime=bear",
+          "axis": "demandRegime",
+          "level": "bear",
+          "seeds": 50
+        },
+        {
+          "id": "66e09c78adf00982",
+          "label": "demandRegime=chop",
+          "axis": "demandRegime",
+          "level": "chop",
+          "seeds": 50
+        },
+        {
+          "id": "44e261ea4386ef56",
+          "label": "demandRegime=bull",
+          "axis": "demandRegime",
+          "level": "bull",
+          "seeds": 50
+        },
+        {
+          "id": "544e19194a84f5b7",
+          "label": "hunterCount=1",
+          "axis": "hunterCount",
+          "level": "1",
+          "seeds": 50
+        },
+        {
+          "id": "83fbb17fe9e9011d",
+          "label": "hunterCount=4",
+          "axis": "hunterCount",
+          "level": "4",
+          "seeds": 50
+        },
+        {
+          "id": "6860a286f34786f0",
+          "label": "hunterCount=16",
+          "axis": "hunterCount",
+          "level": "16",
+          "seeds": 50
+        },
+        {
+          "id": "2a41caa1d6b87619",
+          "label": "maxReportsPerHour=1",
+          "axis": "maxReportsPerHour",
+          "level": "1",
+          "seeds": 50
+        },
+        {
+          "id": "84638f320b90078e",
+          "label": "maxReportsPerHour=24",
+          "axis": "maxReportsPerHour",
+          "level": "24",
+          "seeds": 50
+        },
+        {
+          "id": "a0c2895fd00df2e4",
+          "label": "dormancyBountySource=bankerShare",
+          "axis": "dormancyBountySource",
+          "level": "bankerShare",
+          "seeds": 50
+        },
+        {
+          "id": "8a9b20512ee8c1fc",
+          "label": "payoutSellFraction=0.0",
+          "axis": "payoutSellFraction",
+          "level": "0.0",
+          "seeds": 50
+        },
+        {
+          "id": "ae1c982696015703",
+          "label": "payoutSellFraction=0.5",
+          "axis": "payoutSellFraction",
+          "level": "0.5",
+          "seeds": 50
+        },
+        {
+          "id": "812999c5b1a2d0a3",
+          "label": "payoutSellFraction=1.0",
+          "axis": "payoutSellFraction",
+          "level": "1.0",
+          "seeds": 50
+        },
+        {
+          "id": "eb5b46ec45711d1e",
+          "label": "payoutSellOverHours=1",
+          "axis": "payoutSellOverHours",
+          "level": "1",
+          "seeds": 50
+        },
+        {
+          "id": "381eb9189deb4c58",
+          "label": "payoutSellOverHours=24",
+          "axis": "payoutSellOverHours",
+          "level": "24",
+          "seeds": 50
+        },
+        {
+          "id": "929993d037000fb3",
+          "label": "epochDays=0.25",
+          "axis": "epochDays",
+          "level": "0.25",
+          "seeds": 50
+        },
+        {
+          "id": "dc07c850a9c00dfe",
+          "label": "epochDays=3",
+          "axis": "epochDays",
+          "level": "3",
+          "seeds": 50
+        },
+        {
+          "id": "68bc990b5146e897",
+          "label": "cutRaiseRatio=1:1",
+          "axis": "cutRaiseRatio",
+          "level": "1:1",
+          "seeds": 50
+        },
+        {
+          "id": "981a6ddd3f76938c",
+          "label": "cutRaiseRatio=2:1",
+          "axis": "cutRaiseRatio",
+          "level": "2:1",
+          "seeds": 50
+        },
+        {
+          "id": "9198ed3f24ba9597",
+          "label": "cutRaiseRatio=5:1",
+          "axis": "cutRaiseRatio",
+          "level": "5:1",
+          "seeds": 50
+        },
+        {
+          "id": "dc0e10651f559cc4",
+          "label": "hunterGasCostEth=0x boundary",
+          "axis": "hunterGasCostEth",
+          "level": "0x boundary",
+          "seeds": 50
+        },
+        {
+          "id": "6d7e5d2965d33fc1",
+          "label": "hunterGasCostEth=0.25x boundary",
+          "axis": "hunterGasCostEth",
+          "level": "0.25x boundary",
+          "seeds": 50
+        },
+        {
+          "id": "75a042f156256c15",
+          "label": "hunterGasCostEth=0.5x boundary",
+          "axis": "hunterGasCostEth",
+          "level": "0.5x boundary",
+          "seeds": 50
+        },
+        {
+          "id": "0fc06ea8b8f32427",
+          "label": "hunterGasCostEth=1x boundary",
+          "axis": "hunterGasCostEth",
+          "level": "1x boundary",
+          "seeds": 50
+        },
+        {
+          "id": "5767da437060a153",
+          "label": "hunterGasCostEth=2x boundary",
+          "axis": "hunterGasCostEth",
+          "level": "2x boundary",
+          "seeds": 50
+        },
+        {
+          "id": "bb67116e755a61e7",
+          "label": "hunterGasCostEth=4x boundary",
+          "axis": "hunterGasCostEth",
+          "level": "4x boundary",
+          "seeds": 50
+        },
+        {
+          "id": "cfab03f51aaab367",
+          "label": "hunterGasCostEth=8x boundary",
+          "axis": "hunterGasCostEth",
+          "level": "8x boundary",
+          "seeds": 50
+        }
+      ],
+      "totalRuns": 2000,
+      "startedAt": "2026-09-10T21:23:34.496Z",
+      "finishedAt": "2026-09-10T22:52:06.689Z"
+    }
+  }
+}

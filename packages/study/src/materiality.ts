@@ -66,6 +66,20 @@ export const ABSOLUTE_FLOOR: Record<string, number> = {
   revocationPayoutVolume: 0.1,
   // A single charter.
   liveChartersD90: 1,
+  cumulativeRevokedD90: 1,
+
+  // -- The seat market (whitepaper 12) --------------------------------------
+  // 0.1 ETH of seat volume, matching the pool-volume floor: below that the
+  // blind spot is not worth naming.
+  seatMarketEthVolumeD90: 0.1,
+  // A single seat.
+  cumulativeSeatSalesD90: 1,
+  branchesTransferredD90: 1,
+  // 0.001 of the Herfindahl index. On a thousand equal holders the index is
+  // 0.001, so this is "one holder's worth" of concentration.
+  concentrationHHID90: 0.001,
+  // One tenth of one percent of all branches.
+  largestHolderBranchShareD90: 0.001,
 }
 
 export const DEFAULT_FLOOR = 0

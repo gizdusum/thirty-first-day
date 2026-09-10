@@ -16,7 +16,7 @@
 import { execSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
-import { ARMS, type Arm } from '@thirty-first-day/protocol'
+import type { Arm } from '@thirty-first-day/protocol'
 
 import { METRIC_DISPLAY, rankAxes, summariseCell, toDisplay, type Which } from './aggregate.js'
 import { calibrateGasBoundary } from './calibrate.js'
@@ -27,7 +27,9 @@ import { noiseBands, thresholdFor } from './materiality.js'
 import { defaultWorkerCount } from './pool.js'
 import { runOne } from './runCell.js'
 import { executeSuite, pendingTasks } from './execute.js'
-import { readCellResults, readManifest } from './storage.js'
+import { existsSync, renameSync } from 'node:fs'
+
+import { cellPath, readCellResults, readManifest, writeManifest } from './storage.js'
 import {
   buildBaseline,
   buildFactorial,
@@ -38,7 +40,12 @@ import {
   type SuiteName,
 } from './suites.js'
 
-const ROOT = resolve(process.cwd())
+/**
+ * Where `runs/` lives. Defaults to the working directory; `--root` points it
+ * elsewhere, which is what makes it possible to rehearse a migration against a
+ * copy before running it on the real results.
+ */
+let ROOT = resolve(process.cwd())
 
 interface Args {
   command: string
@@ -184,20 +191,25 @@ function commandReplay(args: Args): void {
   const started = Date.now()
   const run = runOne(cell.overrides, seed, cell.horizonDays, { keepHourly: true })
   console.log(`replayed in ${((Date.now() - started) / 1000).toFixed(1)}s`)
-  console.log(`hourly snapshots retained: ${ARMS.map((a: Arm) => `${a}=${run.hourly?.[a].length ?? 0}`).join(' ')}`)
+  console.log(
+    `arms: ${run.arms.join(', ')}    hourly snapshots retained: ${run.arms
+      .map((a: Arm) => `${a}=${run.hourly?.[a]?.length ?? 0}`)
+      .join(' ')}`,
+  )
   console.log('')
 
   const width = 34
   console.log(
-    `${'metric'.padEnd(width)}${'control'.padStart(16)}${'treatment'.padStart(16)}${'noPayoutSell'.padStart(16)}${'delta'.padStart(16)}`,
+    armHeader(width, run.arms),
   )
   for (const path of METRIC_PATHS) {
-    const cells = ARMS.map((arm: Arm) => toDisplay(readMetric(run.metrics.levels[arm], path), path))
+    const cells = run.arms.map((arm: Arm) => {
+      const level = run.metrics.levels[arm]
+      return level === null || level === undefined ? '—' : fmt(toDisplay(readMetric(level, path), path))
+    })
     const delta = toDisplay(readMetric(run.metrics.delta, path), path)
     console.log(
-      path.padEnd(width) +
-        cells.map((v) => fmt(v)).map((s) => s.padStart(16)).join('') +
-        fmt(delta).padStart(16),
+      path.padEnd(width) + cells.map((s) => s.padStart(16)).join('') + fmt(delta).padStart(16),
     )
   }
   console.log('')
@@ -229,6 +241,10 @@ function commandReplay(args: Args): void {
     console.log('')
     console.log(same ? 'matches the stored result exactly' : 'DIFFERS FROM THE STORED RESULT')
   }
+}
+
+function armHeader(width: number, arms: readonly Arm[]): string {
+  return 'metric'.padEnd(width) + arms.map((a) => a.padStart(16)).join('') + 'delta'.padStart(16)
 }
 
 function fmt(value: number): string {
@@ -366,6 +382,67 @@ function commandReport(args: Args): void {
 // cells / calibrate
 // ---------------------------------------------------------------------------
 
+/**
+ * Re-point stored results at their current cell ids.
+ *
+ * Cell ids are content-derived, so a change to how that content is defined
+ * moves every id at once and orphans results that are otherwise perfectly
+ * good. That happened exactly once, when the id moved from a hash of the whole
+ * resolved configuration to a hash of its difference from the defaults —
+ * precisely so that it could not happen again when a configuration field is
+ * added.
+ *
+ * The join is on the cell label, which the manifest records alongside the old
+ * id. Nothing is deleted and nothing is merged: a rename that would collide
+ * with an existing file is refused and reported.
+ */
+function commandMigrate(args: Args): void {
+  const apply = args.flags['apply'] === 'true'
+  const manifest = readManifest(ROOT)
+  let moved = 0
+  let already = 0
+  let missing = 0
+
+  for (const [suiteName, entry] of Object.entries(manifest.suites)) {
+    const suite = buildNamedSuite(suiteName, { ...args.flags, horizon: String(entry.horizonDays) })
+    const byLabel = new Map(suite.cells.map((c) => [c.label, c.id]))
+    console.log(`${suiteName}: ${entry.cells.length} cells recorded`)
+    for (const recorded of entry.cells) {
+      const current = byLabel.get(recorded.label)
+      const from = cellPath(ROOT, suiteName, recorded.id)
+      if (!existsSync(from)) continue
+      if (current === undefined) {
+        console.log(`  ! ${recorded.label}: no cell with this label any more (${recorded.id})`)
+        missing += 1
+        continue
+      }
+      if (current === recorded.id) {
+        already += 1
+        continue
+      }
+      const to = cellPath(ROOT, suiteName, current)
+      if (existsSync(to)) {
+        console.log(`  ! ${recorded.label}: ${current}.jsonl already exists, refusing to overwrite`)
+        continue
+      }
+      console.log(`  ${apply ? 'mv' : 'would mv'} ${recorded.id} -> ${current}   ${recorded.label}`)
+      if (apply) {
+        renameSync(from, to)
+        recorded.id = current
+      }
+      moved += 1
+    }
+  }
+
+  if (apply) {
+    writeManifest(ROOT, manifest)
+    console.log(`\nmoved ${moved}, already current ${already}, unmatched ${missing}`)
+  } else {
+    console.log(`\n${moved} to move, ${already} already current, ${missing} unmatched`)
+    console.log('re-run with --apply=true to perform the rename')
+  }
+}
+
 function commandCells(args: Args): void {
   const name = args.positional[0]
   if (name === undefined) throw new Error('usage: study cells <suite>')
@@ -397,12 +474,16 @@ const HELP = `study — the Monte Carlo runner for The Thirty-First Day
   study report <suite> [--which=delta|deltaNoPayout|treatment|control|noPayoutSell]
   study cells <suite>
   study calibrate [--seed=N]
+  study migrate [--apply=true]      re-point stored results at their current cell ids
+
+  --root=<dir>  where runs/ lives (default: the working directory)
 
 suites: baseline, ofat, factorial (--axes=a,b,c), sample [--cells=N]
 `
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
+  if (args.flags['root'] !== undefined) ROOT = resolve(args.flags['root'])
   switch (args.command) {
     case 'run':
       await commandRun(args)
@@ -418,6 +499,9 @@ async function main(): Promise<void> {
       return
     case 'calibrate':
       commandCalibrate(args)
+      return
+    case 'migrate':
+      commandMigrate(args)
       return
     default:
       console.log(HELP)

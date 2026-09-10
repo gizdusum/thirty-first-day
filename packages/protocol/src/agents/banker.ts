@@ -61,6 +61,8 @@ export class BankerAgent implements Agent {
       return actions
     }
 
+    this.maybeListSeat(view, cfg, actions)
+
     switch (this.archetype) {
       case 'committed':
         this.runCommitted(view, cfg, rng, actions)
@@ -82,6 +84,33 @@ export class BankerAgent implements Agent {
   /** True once this banker's charter has been revoked. */
   get revoked(): boolean {
     return this.charterGone
+  }
+
+  /**
+   * Whitepaper 12: once transfers are on, leaving has a third option.
+   *
+   * The decision draws from a **separate stream** (`seat`), not the one
+   * `onTick` is handed. That is what lets the seat market be added to the
+   * model without moving a single result in a world where charters are
+   * soulbound: a draw that only happens under some configurations must not
+   * shift the draws that happen under all of them. When the switch is null the
+   * stream is never even created.
+   *
+   * Listing does not reset the dormancy clock — it is a market action, not a
+   * charter interaction. A seat that is listed but never sold is still
+   * reportable on schedule.
+   */
+  private maybeListSeat(view: AgentView, cfg: Config, actions: Action[]): void {
+    if (cfg.charterTransfersEnabledAtDay === null) return
+    if (!view.transfersEnabled()) return
+    if (view.tick % cfg.ticksPerDay !== 0) return
+    if (view.isSeatListed(this.charterId)) return
+    const propensity = cfg.seat.sellerDailyPropensityWad[this.archetype]
+    // Lost cannot sell — the keys are gone. Committed is not leaving. Neither
+    // draws at all, so neither has a stream.
+    if (propensity <= 0n) return
+    if (!view.stream('seat').nextBool(propensity)) return
+    actions.push({ type: 'listSeat', charterId: this.charterId })
   }
 
   // -------------------------------------------------------------------------

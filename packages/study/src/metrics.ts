@@ -1,16 +1,18 @@
 /**
  * What a run reports.
  *
- * Every quantity is computed for all three arms and reported as levels plus
- * two differences: `delta` (treatment − control, everything revocation does)
- * and `deltaNoPayout` (treatment − noPayoutSell, the part caused specifically
- * by payout selling reaching the pool).
+ * Every quantity is computed for each arm and reported as levels plus
+ * differences: `delta` (treatment − control, everything revocation does),
+ * `deltaNoPayout` (treatment − noPayoutSell, the part caused specifically by
+ * payout selling reaching the pool) and, when the cell configures whitepaper
+ * 12's transfer switch, `deltaTransfer` (transferable − treatment, what a seat
+ * market bought or cost).
  *
  * All values stay `bigint`. WAD-scaled quantities are marked in the field
  * comments.
  */
 
-import type { Arm, TickSnapshot, World } from '@thirty-first-day/protocol'
+import type { TickSnapshot, World } from '@thirty-first-day/protocol'
 import { WAD, charterAccrued } from '@thirty-first-day/protocol'
 
 export interface BurnSplit {
@@ -41,6 +43,16 @@ export interface ArmMetrics {
   poolPriceD90: bigint
   revocationPayoutVolume: bigint
   liveChartersD90: bigint
+  /** Revocations to date at the horizon. */
+  cumulativeRevokedD90: bigint
+
+  // -- The seat market (whitepaper 12). Zero in every soulbound arm. --------
+  /** Cumulative ETH paid for seats — the capital `F_n` never sees. See F-06. */
+  seatMarketEthVolumeD90: bigint
+  cumulativeSeatSalesD90: bigint
+  branchesTransferredD90: bigint
+  concentrationHHID90: bigint
+  largestHolderBranchShareD90: bigint
 }
 
 export interface GhostSummary {
@@ -74,11 +86,48 @@ export interface TreatmentMetrics {
   mDropNoPayoutSell: bigint
 }
 
+/**
+ * What a seat market bought, or cost — whitepaper 12.
+ *
+ * Present only when the cell configures the transfer switch, because the
+ * fourth arm is only built then.
+ */
+export interface TransferMetrics {
+  /** The day the one-way switch was thrown. */
+  transfersEnabledOnDay: bigint
+  /** Revocations that did not happen: treatment minus transferable. */
+  revocationsAvoided: bigint
+  /**
+   * Value revocation would have destroyed and did not, in tokens: the
+   * revocation-fee burn that the treatment arm suffered and this one did not.
+   * The complement is `sellerProceedsEth` — what sellers actually received.
+   */
+  valueRescuedBySale: bigint
+  /** ETH that reached sellers through the seat market. */
+  sellerProceedsEth: bigint
+  /** The same number seen as a blind spot: capital `F_n` never observed. F-06. */
+  seatMarketEthVolume: bigint
+  /** Branches still alive because their seat sold instead of being revoked. */
+  branchesKeptAlive: bigint
+  seatSales: bigint
+  concentrationHHI: bigint
+  largestHolderBranchShare: bigint
+}
+
 export interface Metrics {
-  levels: Record<Arm, ArmMetrics>
+  levels: {
+    control: ArmMetrics
+    treatment: ArmMetrics
+    noPayoutSell: ArmMetrics
+    /** Null unless the cell configures the transfer switch. */
+    transferable: ArmMetrics | null
+  }
   delta: ArmMetrics
   deltaNoPayout: ArmMetrics
+  /** `transferable − treatment`. Null unless the fourth arm was built. */
+  deltaTransfer: ArmMetrics | null
   treatment: TreatmentMetrics
+  transfer: TransferMetrics | null
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +224,12 @@ export function armMetrics(accumulator: ArmAccumulator, horizonDays: number): Ar
     poolPriceD90: d90.poolPrice,
     revocationPayoutVolume: d90.ethVolumeByOrigin.revocationPayout,
     liveChartersD90: BigInt(d90.liveCharters),
+    cumulativeRevokedD90: BigInt(d90.cumulativeRevoked),
+    seatMarketEthVolumeD90: d90.seatMarketEthVolume,
+    cumulativeSeatSalesD90: BigInt(d90.cumulativeSeatSales),
+    branchesTransferredD90: BigInt(d90.cumulativeBranchesTransferred),
+    concentrationHHID90: d90.concentrationHHI,
+    largestHolderBranchShareD90: d90.largestHolderBranchShare,
   }
 }
 
@@ -250,6 +305,25 @@ export function treatmentMetrics(
 }
 
 /** Every leaf metric path, for generic aggregation and ranking. */
+export function transferMetrics(
+  transfersEnabledOnDay: number,
+  treatment: ArmMetrics,
+  transferable: ArmMetrics,
+): TransferMetrics {
+  return {
+    transfersEnabledOnDay: BigInt(transfersEnabledOnDay),
+    revocationsAvoided: treatment.cumulativeRevokedD90 - transferable.cumulativeRevokedD90,
+    valueRescuedBySale:
+      treatment.burnsBySourceD90.revocationFee - transferable.burnsBySourceD90.revocationFee,
+    sellerProceedsEth: transferable.seatMarketEthVolumeD90,
+    seatMarketEthVolume: transferable.seatMarketEthVolumeD90,
+    branchesKeptAlive: transferable.totalBranchesD90 - treatment.totalBranchesD90,
+    seatSales: transferable.cumulativeSeatSalesD90,
+    concentrationHHI: transferable.concentrationHHID90,
+    largestHolderBranchShare: transferable.largestHolderBranchShareD90,
+  }
+}
+
 export const METRIC_PATHS: readonly string[] = [
   'yieldPerBranchPerDayD45',
   'yieldPerBranchPerDayD90',
@@ -269,12 +343,34 @@ export const METRIC_PATHS: readonly string[] = [
   'poolPriceD90',
   'revocationPayoutVolume',
   'liveChartersD90',
+  'cumulativeRevokedD90',
+  'seatMarketEthVolumeD90',
+  'cumulativeSeatSalesD90',
+  'branchesTransferredD90',
+  'concentrationHHID90',
+  'largestHolderBranchShareD90',
 ] as const
 
 export function readMetric(metrics: ArmMetrics, path: string): bigint {
+  return readMetricOrNull(metrics, path) ?? 0n
+}
+
+/**
+ * A metric, or null when the stored result predates it.
+ *
+ * Results written before a metric existed simply do not carry it. Reading it
+ * as zero would quietly fold "we never measured this" into "we measured it and
+ * it was nothing", so the aggregation counts those runs out and reports the
+ * smaller `n` instead.
+ */
+export function readMetricOrNull(metrics: ArmMetrics, path: string): bigint | null {
   const dot = path.indexOf('.')
-  if (dot < 0) return metrics[path as keyof ArmMetrics] as bigint
-  const head = path.slice(0, dot) as keyof ArmMetrics
-  const tail = path.slice(dot + 1) as keyof BurnSplit
-  return (metrics[head] as BurnSplit)[tail]
+  if (dot < 0) {
+    const value = metrics[path as keyof ArmMetrics]
+    return typeof value === 'bigint' ? value : null
+  }
+  const head = metrics[path.slice(0, dot) as keyof ArmMetrics]
+  if (head === null || typeof head !== 'object') return null
+  const value = (head as BurnSplit)[path.slice(dot + 1) as keyof BurnSplit]
+  return typeof value === 'bigint' ? value : null
 }

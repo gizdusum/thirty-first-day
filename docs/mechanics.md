@@ -389,6 +389,155 @@ both settings.
 
 ---
 
+## §12 — The seat market
+
+Charters launch soulbound (§6). §12 describes a one-way switch that can later
+enable transfers, after which "selling a charter becomes a second exit path:
+the seat moves whole, branches and balance included. A seat sale is an exit
+with zero sell pressure on $STANDARD; the buyer replaces the seller one for
+one."
+
+**Everything in this section is inert by default.**
+`config.charterTransfersEnabledAtDay` is `null`, charters are soulbound
+forever, and a configuration that does not name it behaves exactly as it did
+before the seat market existed — same arms, same results, same cell id.
+
+| Rule | Implementation |
+| --- | --- |
+| Transfers become possible at the start of day N. | `maybeEnableTransfers`, called at the day roll. Before day N, `listSeat` is rejected with `SOULBOUND`. |
+| The switch is one-way. | The latch lives in `state.seatMarket.enabled`, is written in exactly one place, and is only ever written `true`. No action can clear it; `apply` throws on an unknown action type. Asserted monotone across a whole run. |
+| The seat moves whole: branches and balance included. | `settleSeatSale` rewrites `ownerId` and nothing else. No branch is created or destroyed, no balance is debited, nothing is minted or burned. |
+| Zero sell pressure on $STANDARD. | ETH moves buyer to seller directly. It never enters the pool, pays no trading fee, and never reaches the fee engine. |
+| The buyer replaces the seller one for one. | `lastInteractionTick` resets at the sale, so the dormancy clock (§10) starts over for the new owner. |
+
+### The three exit paths
+
+Once transfers are on, a banker leaving has three options rather than two:
+
+| | Paid in | Branches | Pool |
+| --- | --- | --- | --- |
+| (a) retire every branch | $STANDARD, less the resolution fee (§9) | destroyed | hit, when the proceeds are sold |
+| (b) go dormant | $STANDARD, less the 70% revocation fee (§10) | destroyed | hit, when the payout is sold |
+| (c) sell the seat | ETH, directly from the buyer | survive | untouched |
+
+### The one thing that is easy to get wrong
+
+**Retiring pays in $STANDARD, and turning that into ETH means selling into the
+pool and eating the slippage.** The seller's reservation price is therefore
+
+```
+reservation = ethOut(balance − resolutionFee(P at commit))
+```
+
+where `ethOut` is the real constant-product quote for that size, net of the
+trading fee — not `spotPrice x amount`. A model that used spot would price
+paths (a) and (c) as equivalent and §12's whole claim would become invisible.
+`quoteEthOut` in `core/pool.ts` computes it without touching the pool, and
+`seats.spec.ts` asserts the two figures differ by more than 15% on a size large
+enough to move the reserve, and agree to within 1% on a size that is not.
+
+### What a buyer will pay
+
+```
+value = discountedBalance + npvOfFutureIssuance
+```
+
+`discountedBalance` gets exactly the same treatment as the reservation, because
+it is the same quantity from the other side. The branch stream is valued over
+`seat.buyerHorizonDays` at `seat.buyerDiscountRatePerDayWad`, converted at spot
+rather than at a size-adjusted quote — a single day's yield does not move the
+pool, whereas the whole balance sold at once does.
+
+A consequence worth stating: the buyer is weakly better off than the seller by
+exactly the branch stream, so **a listed seat always clears if a funded, eligible
+buyer exists.** Capacity and the charter limit bind, never price. That is not a
+modelling accident; it is what makes a seat sale Pareto-improving, and it is
+why the interesting axes are how many buyers there are and when the switch is
+thrown.
+
+### Buyer sophistication is a modelling choice
+
+`config.seat.buyerExpectation` names one model and one only:
+`'trailing7dMeanMultiplierFlatN'` — the trailing seven-day mean of `m`, with
+the branch count held flat. It is deliberately unclever. A buyer who forecast
+the revocation wave, or the dilution from the license auction, or the policy
+response, would pay a different price and the whole market would clear
+differently.
+
+**This should not hide.** It is a free parameter of the arm, it is the kind of
+assumption that quietly determines a result, and a sensitivity sweep should
+vary it. The config field exists so that a second model can be dropped in
+without touching anything else.
+
+The same goes for `seat.sellerDailyPropensityWad`, which decides how many
+bankers notice the market at all. Lost is zero by definition — the keys are
+gone. Committed is zero because a banker still buying licenses is not leaving.
+Every other number in there is a judgement.
+
+### Clearing
+
+Deliberately simple, and stated exactly because "match highest bid against
+lowest reservation" is ambiguous when seats are not fungible — they carry
+different balances and branch counts, so a bid is necessarily for a particular
+seat.
+
+Once a day: listings are taken cheapest-reservation first; for each, the
+highest live bid from a buyer who is still eligible and still funded wins if it
+clears the reservation; the pair settles at the midpoint
+(`seat.clearingRule`), so the surplus is split evenly. A seat is indivisible
+and there are no partial fills. Unmatched listings roll over until
+`seat.listingExpiryDays` have passed. There is no order book.
+
+Listing does **not** reset the dormancy clock — it is a market action, not a
+charter interaction. A seat that is listed but never sold is still reportable
+on schedule.
+
+### What the buyers do afterwards
+
+One behaviour, and it is not a strategy: **they check in.** Somebody who has
+just paid ETH for a seat does not then let it be revoked for a 70% penalty when
+a check-in is free. Without it a seat sale would be a thirty-day deferral
+rather than an exit, and the arm would measure the wrong thing.
+
+It stops there. Buyers do not trade, do not withdraw, and do not buy licenses —
+**so a seat that changes hands stops expanding.**
+
+That turns out to matter more than the check-in does, and it deserves to be
+stated as an assumption rather than discovered as a result. On one 90-day run
+with the switch at day 15, the transferable arm avoided 144 revocations and
+still finished with 309 *fewer* branches than the soulbound arm, because 381
+seats had passed to owners who never bought another license. Yield per branch
+was 48% higher — not mainly because revocation was averted, but because the
+branch base stopped growing.
+
+A real buyer paying for 180 days of expected yield might well buy licenses when
+they pay back. This model says they do not, because the alternative is
+inventing a buying strategy the whitepaper does not describe. It is the single
+assumption most likely to be wrong in an interesting direction, and
+`branchesKeptAlive` should never be read without `revocationsAvoided` and
+`seatSales` beside it.
+
+### The blind spot — F-06
+
+§2 says "There is exactly one place ETH enters or leaves this economy: through
+trading." A seat sale is capital entering the economy in exchange for a claim
+on issuance, entirely outside that one place, so `F_n` (§4) never sees a wei of
+it. The model records it as its own series, `seatMarketEthVolume`, and never
+folds it into `F_n` — folding it in would be inventing a protocol rule. See
+[F-06](./findings.md#f-06--a-seat-sale-is-capital-entering-the-economy-that-the-flow-signal-cannot-see)
+for how large it is.
+
+### Whether one wallet may hold several seats — F-05
+
+§6 limits genesis to one charter per wallet and §12 does not say whether that
+survives a transfer. Both readings are implemented behind
+`config.postTransferCharterLimit`, defaulting to `1` — the conservative one.
+Under `Infinity`, `concentrationHHI` and `largestHolderBranchShare` measure
+what accumulation does. See
+[F-05](./findings.md#f-05--does-one-charter-per-wallet-survive-the-transfer-switch).
+
+---
+
 ## [study] Random number streams
 
 Nothing in the package calls `Math.random` or `Date.now`. All randomness comes
@@ -424,6 +573,14 @@ depends only on how many ticks it has lived through.
 byte-identical histories when nothing ever goes dormant, and that when they *do*
 diverge, an agent unrelated to revocation is still at exactly the same stream
 position in both arms.
+
+The seat market is the sharpest illustration of why the streams are split by
+*purpose* and not only by agent. A banker's decision to list a seat is a draw
+that only happens under some configurations; taking it from the `onTick` stream
+would have shifted every subsequent draw that banker made under **all**
+configurations, and adding §12 to the model would have silently moved every
+result the study had already computed. It comes from a separate `seat` stream,
+which is never even created while charters are soulbound.
 
 ---
 
@@ -603,12 +760,24 @@ has, and it should be the first thing a sensitivity sweep varies.
 
 ## [study] The paired counterfactual
 
-`runPaired(config, seed)` builds two worlds from the same config and seed. The
-treatment world is as configured. The control world differs in exactly one
-setting — `revocationEnabled: false` — which makes `isReportable` return false
-for every charter, so dormant charters are never reported, keep their branches
-and keep accruing. `runPaired` refuses a config whose treatment arm already has
-revocation disabled, and the arms are asserted to be identical in every other
+`runArms(config, seed)` builds worlds from the same config and seed that differ
+in exactly one setting each:
+
+| Arm | The lever | Built |
+| --- | --- | --- |
+| `control` | `revocationEnabled: false` | always |
+| `treatment` | §10 as written | always |
+| `noPayoutSell` | the 30% payout is minted but never sold | always |
+| `transferable` | §12's switch thrown on the configured day | **only when `charterTransfersEnabledAtDay` is non-null** |
+
+The fourth arm is conditional because it is a third more compute on every cell
+it applies to, and a cell that does not name the transfer axis must cost
+exactly what it cost before §12 was modelled. The other three arms are forced
+soulbound whatever the cell says, so the switch is the only thing the fourth
+arm varies.
+
+`runArms` refuses a config whose treatment arm already has revocation disabled
+or payouts suppressed, and the arms are asserted to be identical in every other
 config field.
 
 Every result in the study is then a difference against a matched control rather
@@ -661,6 +830,14 @@ package.
 | `externalDemand.*` | 6 traders, 55/45 buy bias | See [Outside demand](#study-outside-demand). Without it `m` pins to its floor and the study has nothing to measure. |
 | `waveGapHours` | 3 days | Long enough that the genesis wave is one label, short enough that the Casual tail is separated from it. |
 | `dormantGenesisBranchesOverride` | `null` | A **sensitivity override**, off in the base case. The dormant cohort's branch share is meant to emerge from behaviour, not be set. |
+| `charterTransfersEnabledAtDay` | `null` | §6 is the launch state and §12's switch is an explicit later decision, so soulbound-forever is the only default that describes the protocol as it ships. |
+| `postTransferCharterLimit` | `1` | The conservative reading of §6. See [F-05](./findings.md#f-05--does-one-charter-per-wallet-survive-the-transfer-switch). |
+| `seat.buyerHorizonDays` | 180 | Long enough that the branch stream dominates a seat's value, short enough not to price in the whole remaining issuance budget. |
+| `seat.buyerDiscountRatePerDayWad` | 0.05%/day (~20% annual) | What a buyer of an illiquid on-chain cash flow would plausibly demand. Per day, because a root in fixed point is an approximation this model does not need to carry. |
+| `seat.buyerExpectation` | trailing 7-day mean `m`, flat `N` | One model, deliberately unclever. **A free parameter that should not hide** — see above. |
+| `seat.listingExpiryDays` | 7 | A listing that has not found a buyer in a week is stale; the seller's alternatives have moved. |
+| `seat.buyers` | 400 x 5 ETH | Sized so the market can in principle absorb the whole dormancy-bound cohort. A market that is capacity-bound by construction would answer the question by assumption. |
+| `seat.sellerDailyPropensityWad` | 0 / 2% / 2% / 5% / 0 | The most consequential assumption in the arm. Lost cannot sell; Committed is not leaving; the rest is judgement. |
 
 ---
 

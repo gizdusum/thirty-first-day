@@ -193,6 +193,42 @@ export const CUT_RAISE_RATIO: Axis = {
   })),
 }
 
+/**
+ * Whitepaper 12's one-way switch.
+ *
+ * Levels below 30 pre-empt the wave: the market is open before anyone becomes
+ * reportable, so a seat can leave through the second exit path instead of
+ * being revoked. Levels above 30 can only catch the tail. `null` is soulbound
+ * forever and is the level every other suite runs at.
+ *
+ * The shape of the curve between those two regimes is the deliverable.
+ */
+export const CHARTER_TRANSFERS: Axis = {
+  name: 'charterTransfersEnabledAtDay',
+  rationale:
+    'When the one-way transfer switch is thrown, relative to the day-31 wave. Before 30 pre-empts it; after 30 only catches the tail.',
+  levels: ([null, 0, 7, 15, 21, 25, 29, 31, 45] as Array<number | null>).map((day) => ({
+    label: day === null ? 'null' : String(day),
+    overrides: withBase({ charterTransfersEnabledAtDay: day }),
+  })),
+}
+
+/**
+ * Whether whitepaper 6's one-charter-per-wallet limit survives transferability.
+ *
+ * Held at a switch day of 15 — early enough to pre-empt the wave — because the
+ * limit is inert while charters are soulbound and the axis would otherwise be
+ * measuring nothing. See F-05.
+ */
+export const POST_TRANSFER_CHARTER_LIMIT: Axis = {
+  name: 'postTransferCharterLimit',
+  rationale: 'Whether seats can be accumulated once they are transferable, and what that does to concentration.',
+  levels: [1, Number.POSITIVE_INFINITY].map((limit) => ({
+    label: Number.isFinite(limit) ? String(limit) : 'unlimited',
+    overrides: withBase({ charterTransfersEnabledAtDay: 15, postTransferCharterLimit: limit }),
+  })),
+}
+
 /** Every axis except the hunter gas axis, which has to be calibrated per cell. */
 export const STATIC_AXES: readonly Axis[] = [
   LICENSES_PER_DAY,
@@ -206,6 +242,8 @@ export const STATIC_AXES: readonly Axis[] = [
   PAYOUT_SELL_OVER_HOURS,
   EPOCH_DAYS,
   CUT_RAISE_RATIO,
+  CHARTER_TRANSFERS,
+  POST_TRANSFER_CHARTER_LIMIT,
 ]
 
 /**

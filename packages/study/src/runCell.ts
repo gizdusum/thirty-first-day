@@ -12,11 +12,12 @@
  */
 
 import {
-  ARMS,
+  armsFor,
   configForArm,
   createWorld,
   populateGenesisCohort,
   resolveConfig,
+  soulbound,
   type Arm,
   type ConfigOverrides,
   type TickSnapshot,
@@ -28,6 +29,7 @@ import {
   ArmAccumulator,
   armMetrics,
   subtractMetrics,
+  transferMetrics,
   treatmentMetrics,
   type ArmMetrics,
   type Metrics,
@@ -53,9 +55,10 @@ export interface RunOptions {
 }
 
 export interface DetailedRun extends RunResult {
-  worlds: Record<Arm, World>
-  daily: Record<Arm, TickSnapshot[]>
-  hourly: Record<Arm, TickSnapshot[]> | null
+  arms: readonly Arm[]
+  worlds: Partial<Record<Arm, World>>
+  daily: Partial<Record<Arm, TickSnapshot[]>>
+  hourly: Partial<Record<Arm, TickSnapshot[]>> | null
 }
 
 export function runOne(
@@ -66,48 +69,69 @@ export function runOne(
 ): DetailedRun {
   const resolved = resolveConfig(overrides)
   const ticks = horizonDays * 24
+  // The fourth arm exists only when the cell configures the transfer switch.
+  // A cell that leaves it null costs exactly what it cost before whitepaper
+  // 12's machinery was built.
+  const arms = armsFor(resolved)
 
-  const worlds = {} as Record<Arm, World>
-  const accumulators = {} as Record<Arm, ArmAccumulator>
-  const hourly: Record<Arm, TickSnapshot[]> | null = options.keepHourly
-    ? ({ control: [], treatment: [], noPayoutSell: [] } as Record<Arm, TickSnapshot[]>)
-    : null
+  const worlds: Partial<Record<Arm, World>> = {}
+  const accumulators: Partial<Record<Arm, ArmAccumulator>> = {}
+  const hourly: Partial<Record<Arm, TickSnapshot[]>> | null = options.keepHourly ? {} : null
 
-  for (const arm of ARMS) {
-    const world = createWorld(configForArm(resolved, arm), seed)
+  for (const arm of arms) {
+    // Every arm but `transferable` is soulbound, so the transfer switch is the
+    // only thing the fourth arm varies.
+    const armConfig =
+      arm === 'transferable' ? configForArm(resolved, arm) : configForArm(soulbound(resolved), arm)
+    const world = createWorld(armConfig, seed)
     populateGenesisCohort(world)
-    worlds[arm] = world
-    accumulators[arm] = new ArmAccumulator(horizonDays)
+    worlds[arm as Arm] = world
+    accumulators[arm as Arm] = new ArmAccumulator(horizonDays)
+    if (hourly !== null) hourly[arm as Arm] = []
   }
 
   for (let t = 0; t < ticks; t++) {
-    for (const arm of ARMS) {
-      const result = worlds[arm].tick()
-      accumulators[arm].observe(result.snapshot)
-      if (hourly !== null) hourly[arm].push(result.snapshot)
+    for (const arm of arms) {
+      const world = worlds[arm as Arm] as World
+      const result = world.tick()
+      ;(accumulators[arm as Arm] as ArmAccumulator).observe(result.snapshot)
+      if (hourly !== null) (hourly[arm as Arm] as TickSnapshot[]).push(result.snapshot)
       // `world.history` grows unboundedly and nothing downstream reads it
       // here; drop it as we go so a long grid stays flat in memory.
-      if (!options.keepHourly) worlds[arm].history.length = 0
+      if (!options.keepHourly) world.history.length = 0
     }
   }
 
-  const levels = {} as Record<Arm, ArmMetrics>
-  for (const arm of ARMS) levels[arm] = armMetrics(accumulators[arm], horizonDays)
+  const levels: Partial<Record<Arm, ArmMetrics>> = {}
+  for (const arm of arms) {
+    levels[arm as Arm] = armMetrics(accumulators[arm as Arm] as ArmAccumulator, horizonDays)
+  }
+  const control = levels.control as ArmMetrics
+  const treatment = levels.treatment as ArmMetrics
+  const noPayoutSell = levels.noPayoutSell as ArmMetrics
+  const transferable = levels.transferable ?? null
 
   const metrics: Metrics = {
-    levels,
-    delta: subtractMetrics(levels.treatment, levels.control),
-    deltaNoPayout: subtractMetrics(levels.treatment, levels.noPayoutSell),
+    levels: { control, treatment, noPayoutSell, transferable },
+    delta: subtractMetrics(treatment, control),
+    deltaNoPayout: subtractMetrics(treatment, noPayoutSell),
+    deltaTransfer: transferable === null ? null : subtractMetrics(transferable, treatment),
     treatment: treatmentMetrics(
-      worlds.treatment,
-      accumulators.treatment,
-      levels.treatment,
-      levels.noPayoutSell,
+      worlds.treatment as World,
+      accumulators.treatment as ArmAccumulator,
+      treatment,
+      noPayoutSell,
     ),
+    transfer:
+      transferable === null || resolved.charterTransfersEnabledAtDay === null
+        ? null
+        : transferMetrics(resolved.charterTransfersEnabledAtDay, treatment, transferable),
   }
 
-  const daily = {} as Record<Arm, TickSnapshot[]>
-  for (const arm of ARMS) daily[arm] = accumulators[arm].dailySnapshots()
+  const daily: Partial<Record<Arm, TickSnapshot[]>> = {}
+  for (const arm of arms) {
+    daily[arm as Arm] = (accumulators[arm as Arm] as ArmAccumulator).dailySnapshots()
+  }
 
   return {
     cellId: cellId(overrides, horizonDays),
@@ -119,6 +143,7 @@ export function runOne(
       seed,
       horizonDays,
     },
+    arms,
     worlds,
     daily,
     hourly,

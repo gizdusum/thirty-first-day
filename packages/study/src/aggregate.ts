@@ -9,7 +9,7 @@
 import { createRng } from '@thirty-first-day/protocol'
 
 import type { CellSpec } from './cells.js'
-import { METRIC_PATHS, readMetric, type ArmMetrics } from './metrics.js'
+import { METRIC_PATHS, readMetricOrNull, type ArmMetrics } from './metrics.js'
 import type { RunResult } from './runCell.js'
 import { readCellResults } from './storage.js'
 import type { LevelRef, Suite } from './suites.js'
@@ -48,6 +48,12 @@ export const METRIC_DISPLAY: Record<string, MetricDisplay> = Object.fromEntries(
       ['poolPriceD90', { decimals: 18, unit: 'ETH/token' }],
       ['revocationPayoutVolume', ETH],
       ['liveChartersD90', COUNT],
+      ['cumulativeRevokedD90', COUNT],
+      ['seatMarketEthVolumeD90', ETH],
+      ['cumulativeSeatSalesD90', COUNT],
+      ['branchesTransferredD90', COUNT],
+      ['concentrationHHID90', { decimals: 18, unit: 'HHI' }],
+      ['largestHolderBranchShareD90', { decimals: 18, unit: 'share' }],
     ] as Array<[string, Omit<MetricDisplay, 'path'>]>
   ).map(([path, rest]) => [path, { path, ...rest }]),
 )
@@ -118,12 +124,20 @@ export function summarise(values: readonly number[], seed = 424_242): Summary {
 // Cell aggregation
 // ---------------------------------------------------------------------------
 
-export type Which = 'delta' | 'deltaNoPayout' | 'treatment' | 'control' | 'noPayoutSell'
+export type Which =
+  | 'delta'
+  | 'deltaNoPayout'
+  | 'deltaTransfer'
+  | 'treatment'
+  | 'control'
+  | 'noPayoutSell'
+  | 'transferable'
 
-function pick(result: RunResult, which: Which): ArmMetrics {
+function pick(result: RunResult, which: Which): ArmMetrics | null {
   if (which === 'delta') return result.metrics.delta
   if (which === 'deltaNoPayout') return result.metrics.deltaNoPayout
-  return result.metrics.levels[which]
+  if (which === 'deltaTransfer') return result.metrics.deltaTransfer ?? null
+  return result.metrics.levels[which] ?? null
 }
 
 export interface CellSummary {
@@ -144,7 +158,17 @@ export function summariseCell(
 ): CellSummary {
   const metrics: Record<string, Summary> = {}
   for (const path of METRIC_PATHS) {
-    metrics[path] = summarise(results.map((r) => toDisplay(readMetric(pick(r, which), path), path)))
+    // A metric a stored result predates, or an arm a cell never built, is
+    // counted out rather than read as zero — the smaller `n` says so.
+    const values: number[] = []
+    for (const result of results) {
+      const arm = pick(result, which)
+      if (arm === null) continue
+      const raw = readMetricOrNull(arm, path)
+      if (raw === null) continue
+      values.push(toDisplay(raw, path))
+    }
+    metrics[path] = summarise(values)
   }
 
   const treatmentOnly: Record<string, Summary> = {}
@@ -174,6 +198,25 @@ export function summariseCell(
     .filter((v): v is bigint => v !== null)
     .map((v) => Number(v) / 1e18)
   treatmentOnly['attributableCut'] = summarise(attributable)
+
+  // Whitepaper 12 figures, over the runs that built a fourth arm.
+  const transfers = results
+    .map((r) => r.metrics.transfer)
+    .filter((v): v is NonNullable<typeof v> => v !== null && v !== undefined)
+  const transferScalars: Array<[string, (t: (typeof transfers)[number]) => number]> = [
+    ['transfersEnabledOnDay', (t) => Number(t.transfersEnabledOnDay)],
+    ['revocationsAvoided', (t) => Number(t.revocationsAvoided)],
+    ['valueRescuedBySale', (t) => Number(t.valueRescuedBySale) / 1e18],
+    ['sellerProceedsEth', (t) => Number(t.sellerProceedsEth) / 1e18],
+    ['seatMarketEthVolume', (t) => Number(t.seatMarketEthVolume) / 1e18],
+    ['branchesKeptAlive', (t) => Number(t.branchesKeptAlive)],
+    ['seatSales', (t) => Number(t.seatSales)],
+    ['concentrationHHI', (t) => Number(t.concentrationHHI) / 1e18],
+    ['largestHolderBranchShare', (t) => Number(t.largestHolderBranchShare) / 1e18],
+  ]
+  for (const [name, read] of transferScalars) {
+    treatmentOnly[name] = summarise(transfers.map(read))
+  }
 
   return {
     cellId: cell.id,

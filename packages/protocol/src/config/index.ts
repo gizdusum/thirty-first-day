@@ -13,6 +13,9 @@ export type {
   PayoutConfig,
   HunterConfig,
   ExternalDemandConfig,
+  SeatMarketConfig,
+  BuyerExpectation,
+  SeatClearingRule,
 } from './defaults.js'
 
 export type ConfigOverrides = Partial<Config>
@@ -215,6 +218,38 @@ export function validateConfig(cfg: Config): void {
   }
   if (demand.startingEth < 0n) {
     throw new RangeError('config: externalDemand.startingEth must be non-negative')
+  }
+
+  // -- The seat market (whitepaper 12) --------------------------------------
+  const switchDay = cfg.charterTransfersEnabledAtDay
+  if (switchDay !== null && (!Number.isInteger(switchDay) || switchDay < 0)) {
+    throw new RangeError(
+      `config.charterTransfersEnabledAtDay must be null or a non-negative integer day, got ${switchDay}`,
+    )
+  }
+  if (!(cfg.postTransferCharterLimit >= 1)) {
+    throw new RangeError('config.postTransferCharterLimit must be at least 1')
+  }
+  const seat = cfg.seat
+  if (!Number.isInteger(seat.buyerHorizonDays) || seat.buyerHorizonDays <= 0) {
+    throw new RangeError('config.seat.buyerHorizonDays must be a positive integer')
+  }
+  if (seat.buyerDiscountRatePerDayWad < 0n) {
+    throw new RangeError('config.seat.buyerDiscountRatePerDayWad must be non-negative')
+  }
+  if (!Number.isInteger(seat.listingExpiryDays) || seat.listingExpiryDays <= 0) {
+    throw new RangeError('config.seat.listingExpiryDays must be a positive integer')
+  }
+  if (!Number.isInteger(seat.buyers.count) || seat.buyers.count < 0) {
+    throw new RangeError('config.seat.buyers.count must be a non-negative integer')
+  }
+  if (seat.buyers.budgetEth < 0n) {
+    throw new RangeError('config.seat.buyers.budgetEth must be non-negative')
+  }
+  for (const [archetype, propensity] of Object.entries(seat.sellerDailyPropensityWad)) {
+    if (propensity < 0n || propensity > WAD) {
+      throw new RangeError(`config.seat.sellerDailyPropensityWad.${archetype} must be in [0, 1]`)
+    }
   }
 
   // -- Waves and the sensitivity override ------------------------------------

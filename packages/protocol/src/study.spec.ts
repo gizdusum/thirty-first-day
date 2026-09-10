@@ -32,7 +32,7 @@ import { createRng } from './rng/xoshiro128.js'
 import { escalatedGasEth, profitabilityFloor } from './core/hunters.js'
 import { charterAccrued } from './core/ledger.js'
 import { spotPrice } from './core/pool.js'
-import type { Action, Agent, Archetype, Event, TickResult, Wallet } from './types.js'
+import type { Action, Agent, Archetype, Event, TickResult, TickSnapshot, Wallet } from './types.js'
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -85,6 +85,41 @@ function eventsOf<T extends Event['type']>(
 
 function serialize(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) => (typeof v === 'bigint' ? `${v}n` : v))
+}
+
+/**
+ * A history with the seat-market instrumentation removed.
+ *
+ * The transferable arm genuinely has a seat market, so `transfersEnabled` and
+ * the concentration figures differ from the soulbound arms by construction —
+ * that is the arm reporting what it is, not a divergence. Everything else is
+ * the economy, and the economy is what must agree.
+ */
+function economyOnly(history: readonly TickSnapshot[]): string {
+  return serialize(
+    history.map((snapshot) => {
+      const {
+        transfersEnabled,
+        seatListingsOpen,
+        seatSalesThisTick,
+        cumulativeSeatSales,
+        seatMarketEthVolume,
+        cumulativeBranchesTransferred,
+        concentrationHHI,
+        largestHolderBranchShare,
+        ...economy
+      } = snapshot
+      void transfersEnabled
+      void seatListingsOpen
+      void seatSalesThisTick
+      void cumulativeSeatSales
+      void seatMarketEthVolume
+      void cumulativeBranchesTransferred
+      void concentrationHHI
+      void largestHolderBranchShare
+      return economy
+    }),
+  )
 }
 
 const DAY = 24
@@ -648,10 +683,62 @@ describe('6 the paired counterfactual', () => {
       ticks: DAY * 40,
     })
     expect(run.treatment.state.wave.cumulativeRevoked).toBe(0)
+    expect(run.arms).toEqual(ARMS)
+    expect(run.transferable).toBeNull()
     const reference = serialize(run.control.history)
     for (const arm of ARMS) {
-      expect(serialize(run[arm].history), `${arm} diverged`).toBe(reference)
+      expect(serialize(run[arm]?.history), `${arm} diverged`).toBe(reference)
     }
+  })
+
+  it('runs all four arms, byte-identical, when transfers are on but nobody sells', () => {
+    // The same test with the fourth arm in play. A Committed cohort never goes
+    // dormant and never lists a seat, so the transfer switch is as irrelevant
+    // as revocation is — and all four arms must agree exactly.
+    const run = runArms(
+      {
+        genesisCharters: 40,
+        cohortMixBps: onlyCommitted(),
+        charterTransfersEnabledAtDay: 10,
+      },
+      58,
+      { ticks: DAY * 40 },
+    )
+    expect(run.arms).toEqual([...ARMS, 'transferable'])
+    expect(run.transferable).not.toBeNull()
+    expect(run.transferable?.transfersEnabled()).toBe(true)
+    expect(run.transferable?.state.seatMarket.cumulativeSales).toBe(0)
+    expect(run.treatment.state.wave.cumulativeRevoked).toBe(0)
+
+    const reference = economyOnly(run.control.history)
+    for (const arm of [...ARMS, 'transferable'] as const) {
+      expect(economyOnly(run[arm]?.history ?? []), `${arm} diverged`).toBe(reference)
+    }
+    // And the seat-market series is empty in the arm that has one, because
+    // nobody in an all-Committed cohort ever lists.
+    const last = run.transferable?.history[run.transferable.history.length - 1]
+    expect(last?.seatMarketEthVolume).toBe(0n)
+    expect(last?.seatListingsOpen).toBe(0)
+  })
+
+  it('builds three arms when the transfer switch is null, and four when it is not', () => {
+    const soulboundRun = runArms({ genesisCharters: 20 }, 59)
+    expect(soulboundRun.arms).toHaveLength(3)
+    expect(soulboundRun.transferable).toBeNull()
+    // No seat buyers exist at all, so a soulbound cell costs what it always did.
+    expect(soulboundRun.populations.treatment?.seatBuyers ?? null).toBeNull()
+    for (const id of soulboundRun.treatment.state.wallets.keys()) {
+      expect(id.startsWith('seat-buyer')).toBe(false)
+    }
+
+    const transferRun = runArms({ genesisCharters: 20, charterTransfersEnabledAtDay: 5 }, 59)
+    expect(transferRun.arms).toHaveLength(4)
+    expect(transferRun.transferable).not.toBeNull()
+    // The other three arms stay soulbound whatever the cell says.
+    expect(transferRun.control.config.charterTransfersEnabledAtDay).toBeNull()
+    expect(transferRun.treatment.config.charterTransfersEnabledAtDay).toBeNull()
+    expect(transferRun.noPayoutSell.config.charterTransfersEnabledAtDay).toBeNull()
+    expect(transferRun.transferable?.config.charterTransfersEnabledAtDay).toBe(5)
   })
 
   it('holds the payout instead of selling it in the noPayoutSell arm', () => {

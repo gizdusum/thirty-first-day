@@ -27,6 +27,7 @@ outcomes, not a single path.
 | `docs/experimental-design.md` | The axes, the four suites, the demand regimes, and what counts as a difference. |
 | `docs/findings.md` | Places where the whitepaper had to be interpreted, and what the model does about each. |
 | `docs/performance.md` | What the model cost, what was optimised, and what it bought. |
+| `docs/results-suites-a-b.md` | What suites A and B found. |
 | `packages/protocol/src/invariants.spec.ts` | The protocol invariants, asserted at every tick over randomized configs and seeds. |
 | `packages/protocol/src/study.spec.ts` | The claims the study depends on: the cohort, the hunters, the wave, and the arms. |
 | `packages/study/src/study.spec.ts` | The runner's guarantees: stable ids, exact replay, pool equivalence, resumability. |
@@ -58,11 +59,13 @@ study's credibility mechanism, not a convenience.
 ## Method
 
 The engine is deterministic, so every result is a **paired difference** rather
-than a comparison across configurations. `runArms(config, seed)` builds three
-worlds from the same seed that differ in exactly one setting each: the control
-never revokes a dormant charter, and a third arm revokes but never lets the 30%
-payout reach the pool — which is how the study separates "issuance fell after
-day 31" from "issuance fell *because of* payout selling". Each agent draws from its own random stream, derived
+than a comparison across configurations. `runArms(config, seed)` builds worlds
+from the same seed that differ in exactly one setting each: the control never
+revokes a dormant charter; a third arm revokes but never lets the 30% payout
+reach the pool, which separates "issuance fell after day 31" from "issuance
+fell *because of* payout selling"; and a fourth, built only when the study
+names it, throws whitepaper §12's one-way transfer switch so that a leaving
+banker can sell their seat instead of being revoked. Each agent draws from its own random stream, derived
 from `(seed, agentId, purpose)`, so an extra draw in one arm does not shift
 every later draw in it — without that the two histories would diverge for
 reasons unrelated to revocation and the comparison would be meaningless. The
@@ -78,9 +81,21 @@ Two things the model deliberately refuses to assume:
 - **That dormant charters get cleaned up.** Reporting costs gas, and below some
   dormant balance the 2% bounty never covers it. Those charters keep their
   branches and dilute everyone else indefinitely.
+- **That a seat sale is cheap for the seller.** Retiring pays in $STANDARD;
+  turning that into ETH means selling into the pool and eating the slippage. A
+  seller's reservation price is the real pool quote for the whole balance, not
+  the spot price times the amount — which is the only way §12's claim that a
+  seat sale carries "zero sell pressure" can be shown rather than assumed.
 
 ## Status
 
-Protocol model, cohort, bounty-hunter economy, three-arm counterfactual, and
-the Monte Carlo runner with suites A–D. Suites A and B have been run; C and D
-are built but not yet executed. No report site yet — that comes next.
+Protocol model, cohort, bounty-hunter economy, four-arm counterfactual
+(including whitepaper §12's seat market), and the Monte Carlo runner with
+suites A–D.
+
+Suite A (200 seeds) and suite B (2,000 runs, 40 cells) have been run over the
+twelve pre-transfer axes — see
+[`docs/results-suites-a-b.md`](./docs/results-suites-a-b.md). Suite C's axes
+are chosen from B's ranking but it has not been executed; suite D is built and
+not executed; the two transfer axes are in the suite definition and not yet
+swept. No report site yet — that comes next.

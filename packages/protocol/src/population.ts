@@ -12,12 +12,15 @@
 import { BankerAgent } from './agents/banker.js'
 import { BountyHunterPool } from './agents/bountyHunter.js'
 import { RandomTrader } from './agents/randomTrader.js'
+import { SeatBuyerPool } from './agents/seatBuyer.js'
 import type { World } from './world.js'
 
 export interface Population {
   bankers: BankerAgent[]
   hunters: BountyHunterPool | null
   market: RandomTrader[]
+  /** Null unless the transfer switch is configured (whitepaper 12). */
+  seatBuyers: SeatBuyerPool | null
 }
 
 export interface PopulateOptions {
@@ -56,5 +59,15 @@ export function populateGenesisCohort(world: World, options: PopulateOptions = {
     hunters = new BountyHunterPool()
     world.addAgent(hunters)
   }
-  return { bankers, hunters, market }
+
+  // Registered after the bankers, so that a seat listed this tick is visible to
+  // a bidder in the same tick. Only exists where transfers are configured, so a
+  // soulbound world costs exactly what it did before the seat market was built.
+  let seatBuyers: SeatBuyerPool | null = null
+  if (world.config.charterTransfersEnabledAtDay !== null && world.config.seat.buyers.count > 0) {
+    seatBuyers = new SeatBuyerPool()
+    world.addAgent(seatBuyers)
+  }
+
+  return { bankers, hunters, market, seatBuyers }
 }

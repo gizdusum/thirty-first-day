@@ -51,6 +51,7 @@ import {
   writeManifest,
 } from './storage.js'
 import { buildBaseline, buildOfat, buildSample, totalRuns, type Suite } from './suites.js'
+import { auditSuite, levelLabelFor } from '../scripts/axis-audit.js'
 
 // A deliberately small world: these tests are about the machinery, not the
 // economics, and a full 1000-charter 90-day cell takes seventeen seconds.
@@ -480,5 +481,75 @@ describe('storage', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Axis composition
+// ---------------------------------------------------------------------------
+
+/*
+ * A multi-axis suite composes a cell with a shallow merge, so two axes that
+ * write the same key silently resolve by order rather than erroring. The
+ * failure mode is a flat result that is indistinguishable from a null, and a
+ * null is publishable — see docs/experimental-design.md.
+ *
+ * Suite B is what the published study rests on, so its immunity is asserted
+ * here rather than left to a script.
+ */
+describe('axis composition', () => {
+  it('every OFAT axis reaches every cell it labels', () => {
+    const suite = buildOfat({ seeds: 1 })
+    const verdicts = auditSuite(suite, STATIC_AXES)
+    const broken = verdicts.filter((v) => v.clobbered > 0)
+    expect(broken.map((v) => v.axis)).toEqual([])
+    // And the audit is looking at something: OFAT labels one axis per cell.
+    expect(verdicts.reduce((n, v) => n + v.reached, 0)).toBe(suite.cells.length)
+  })
+
+  it('the audit catches an axis whose level is overwritten', () => {
+    // Two axes that both write `payout`, composed in this order.
+    const first = {
+      name: 'writesPayoutFirst',
+      rationale: 'test',
+      levels: [
+        {
+          label: 'sell-none',
+          overrides: { ...baselineOverrides(), payout: { ...DEFAULT_CONFIG.payout, sellFractionWad: 0n } },
+        },
+      ],
+    }
+    const second = {
+      name: 'writesPayoutSecond',
+      rationale: 'test',
+      levels: [
+        {
+          label: 'slow',
+          overrides: { ...baselineOverrides(), payout: { ...DEFAULT_CONFIG.payout, sellOverHours: 168 } },
+        },
+      ],
+    }
+    const cell = makeCell({
+      label: 'writesPayoutFirst=sell-none writesPayoutSecond=slow',
+      overrides: { ...baselineOverrides(), ...first.levels[0]!.overrides, ...second.levels[0]!.overrides },
+      seeds: [1],
+      horizonDays: 90,
+    })
+    const suite: Suite = { name: 'factorial', description: 'test', cells: [cell], levels: [] }
+
+    const verdicts = auditSuite(suite, [first, second])
+    expect(verdicts.find((v) => v.axis === 'writesPayoutFirst')?.clobbered).toBe(1)
+    expect(verdicts.find((v) => v.axis === 'writesPayoutSecond')?.clobbered).toBe(0)
+  })
+
+  it('reads a level label that contains a space', () => {
+    // The gas axis labels its levels "4x boundary". A split on spaces drops
+    // the axis silently, which is the same class of bug.
+    expect(levelLabelFor('epochDays=3 hunterGasCostEth=4x boundary', 'hunterGasCostEth')).toBe(
+      '4x boundary',
+    )
+    expect(levelLabelFor('hunterGasCostEth=4x boundary epochDays=3', 'hunterGasCostEth')).toBe(
+      '4x boundary',
+    )
   })
 })

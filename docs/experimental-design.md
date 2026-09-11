@@ -205,6 +205,73 @@ dozen. That takes OFAT from 48 nominal cells to 40 real ones.
 
 ---
 
+## Composition: five of suite D's axes never reached the cells
+
+**This is a defect in this repository, not in the whitepaper.** It is recorded
+here rather than in `findings.md` because that file is for places the
+whitepaper had to be interpreted, and this is our own bug.
+
+A multi-axis suite builds a cell by spreading one level from each axis over the
+baseline, left to right:
+
+```ts
+let overrides = baselineOverrides()
+for (const axis of axes) overrides = { ...overrides, ...level.overrides }
+```
+
+That is a **shallow** merge, and several axes write the same key:
+
+| Key | Axes that write it | Who wins |
+| --- | --- | --- |
+| `hunter` | `hunterCount`, `maxReportsPerHour`, `hunterGasCostEth` | the last one composed — each writes the whole object |
+| `payout` | `payoutSellFraction`, `payoutSellOverHours` | `payoutSellOverHours` |
+| `charterTransfersEnabledAtDay` | `charterTransfersEnabledAtDay`, `postTransferCharterLimit` | `postTransferCharterLimit`, which pins it to 15 by design |
+| `externalDemand` | `demandRegime`, and every axis built through `withBase`, which re-injects the baseline value | whichever is composed last |
+
+So in the 1,491-cell suite D run of 11 September 2026, five of fourteen axes
+measured nothing:
+
+| Axis | Cells that lost the drawn level | What every cell actually ran |
+| --- | --- | --- |
+| `demandRegime` | 1,194 / 1,491 | `mild` |
+| `hunterCount` | 1,491 / 1,491 | the gas axis's hunter block |
+| `maxReportsPerHour` | 1,491 / 1,491 | the gas axis's hunter block |
+| `payoutSellFraction` | 1,491 / 1,491 | `payoutSellOverHours`'s payout block |
+| `charterTransfersEnabledAtDay` | 1,326 / 1,491 | switch day 15 |
+
+**Suites A and B are unaffected**, and they are what is published. OFAT spreads
+exactly one level per cell, so nothing can collide; `pnpm tsx
+packages/study/scripts/axis-audit.ts ofat` confirms every axis reaches every
+cell. Suite C was never run.
+
+**What suite D's results still are.** The treatment and control arms are forced
+soulbound by `soulbound()` whatever the cell says about transfers, so the
+paired deltas are sound. The run is a valid Latin hypercube over the nine
+surviving axes with the other five pinned. It is not the design specified, and
+the §12 switch-day curve — the deliverable that axis existed for — is not in
+it.
+
+**Why this is worse than an ordinary bug.** A clobbered axis does not throw.
+It produces a flat row with overlapping confidence intervals, which is exactly
+what a genuine null looks like, and a null is a publishable result. The
+switch-day curve came out flat across every metric including day 45, which
+cannot be true, and that implausibility is the only reason it was caught.
+
+Two guards now exist:
+
+- `packages/study/scripts/axis-audit.ts` checks, for every axis of a suite,
+  whether the level a cell drew survives into that cell's composed overrides.
+  It exits non-zero if any axis is overwritten.
+- `packages/study/scripts/sample-sensitivity.ts` runs that audit before it
+  prints anything, names the dead axes, and omits them rather than reporting
+  them as nulls.
+
+The fix itself — making composition reject a collision instead of resolving it
+by order — is **not applied**, because it changes every suite D cell id and
+orphans the 1,491 stored results. That is a re-run, not a patch.
+
+---
+
 ## Materiality
 
 Suite D exists to say how many cells in the whole space showed a difference.

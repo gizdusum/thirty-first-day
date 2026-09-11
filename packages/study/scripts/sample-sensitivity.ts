@@ -169,6 +169,36 @@ for (const metric of HEADLINE) {
 console.log('')
 console.log('Under a true null about 5% of cells clear the band by chance alone.')
 console.log('A share near 5% is a null; the interesting rows are the ones well above it.')
+
+/*
+ * Where the exact zeros come from.
+ *
+ * An exactly-zero delta is not a small effect, it is no event: treatment and
+ * control ran identically because nothing was ever revoked. Suite B found gas
+ * to be a cliff rather than a slope, and this is the same cliff at full width
+ * — every exact zero in the suite sits above the profitability boundary, and
+ * none sits below it.
+ */
+const gasAxis = axes.find((a) => a.name === 'hunterGasCostEth')
+if (gasAxis !== undefined && !clobbered.has(gasAxis.name)) {
+  console.log('')
+  console.log('## the exact zeros are the gas cliff, not small effects')
+  console.log('')
+  console.log(
+    `${'hunter gas'.padEnd(18)}${'cells'.padStart(7)}${'no revocation at all'.padStart(22)}${'share'.padStart(9)}`,
+  )
+  for (const level of gasAxis.levels) {
+    const cells = withRuns.filter((c) => levelOf(c, gasAxis.name) === level.label)
+    if (cells.length === 0) continue
+    const zero = cells.filter((c) => c.metrics['mintedToWalletsD90']?.mean === 0).length
+    console.log(
+      level.label.padEnd(18) +
+        String(cells.length).padStart(7) +
+        String(zero).padStart(22) +
+        `${((zero / cells.length) * 100).toFixed(1)}%`.padStart(9),
+    )
+  }
+}
 console.log('')
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,10 @@ import {
   type Exemplar,
   type LicenseLevel,
 } from '../components/charts'
+import { Instrument } from '../components/instrument'
+import { INSTRUMENT } from '../config'
 import exemplarData from '../data/exemplar.json'
+import fieldDay31 from '../data/field-day31.json'
 import licensesData from '../data/licenses.json'
 
 const REPO = 'https://github.com/thirty-first-day/thirty-first-day'
@@ -21,7 +24,9 @@ function Replay({ children }: { children: ReactNode }) {
 
 export default function Page() {
   return (
-    <main className="page">
+    <>
+      {INSTRUMENT ? <Instrument initial={fieldDay31} /> : null}
+      <main className="page">
       <header className="masthead">
         <p className="dateline">An independent study &middot; 11 September 2026</p>
         <h1>The Thirty-First Day</h1>
@@ -751,5 +756,6 @@ export default function Page() {
         </p>
       </footer>
     </main>
+    </>
   )
 }

@@ -208,7 +208,7 @@ function Frame({
         textAnchor="middle"
         fontFamily="var(--mono)"
         fontSize={l.axis}
-        letterSpacing="0.06em"
+        letterSpacing="0.08em"
         fill="var(--ink-faint)"
       >
         {xLabel}
@@ -239,9 +239,10 @@ function EndLabel({
       y={y + 3.5 + dy}
       fontFamily="var(--mono)"
       fontSize={size}
+      letterSpacing="0.08em"
       fill="var(--ink-muted)"
     >
-      {text}
+      {text.toUpperCase()}
     </text>
   )
 }
@@ -336,7 +337,7 @@ function MultiplierPlot({ data, l }: { data: Exemplar; l: Layout }) {
       xLabel="DAY"
       blindWindow={[30, 32]}
       markerDay={31}
-      markerLabel="day 31"
+      markerLabel="DAY 31"
       xTicks={[20, 31, 45, 60, 75, 90]}
     >
       {(s) => (
@@ -379,7 +380,7 @@ function YieldPlot({ data, l }: { data: Exemplar; l: Layout }) {
       yFormat={(v) => v.toFixed(0)}
       xLabel="DAY — TOKENS PER BRANCH PER DAY"
       markerDay={31}
-      markerLabel="day 31"
+      markerLabel="DAY 31"
       xTicks={[20, 31, 45, 60, 75, 90]}
     >
       {(s) => (
@@ -407,7 +408,7 @@ function YieldPlot({ data, l }: { data: Exemplar; l: Layout }) {
             fontSize={l.tick}
             fill="var(--ink-muted)"
           >
-            day 45
+            DAY 45
           </text>
         </g>
       )}
@@ -438,7 +439,7 @@ function BranchesPlot({ data, l }: { data: Exemplar; l: Layout }) {
       yFormat={(v) => String(Math.round(v))}
       xLabel="DAY — LIVE BRANCHES"
       markerDay={31}
-      markerLabel="day 31"
+      markerLabel="DAY 31"
       xTicks={[20, 31, 45, 60, 75, 90]}
     >
       {(s) => (
@@ -566,7 +567,7 @@ function LicensesPlot({ levels, l }: { levels: LicenseLevel[]; l: Layout }) {
         textAnchor="middle"
         fontFamily="var(--mono)"
         fontSize={l.axis}
-        letterSpacing="0.06em"
+        letterSpacing="0.08em"
         fill="var(--ink-faint)"
       >
         LICENSES/DAY — DAY-45 YIELD DELTA

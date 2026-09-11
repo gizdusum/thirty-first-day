@@ -1,25 +1,45 @@
 /*
- * Grayscale, one column, hairline rules.
+ * Warm bone, deep warm near-black, hairline rules.
  *
  * No accent colour, no gradient, no shadow, no rounded corner, no icon. The
- * only non-text element on the page is a chart, and the charts obey the same
- * rule: thin strokes, one light band for a confidence interval, direct labels.
+ * only non-text elements on the page are the instrument and the charts, and
+ * they obey the same rule: thin strokes, one light band for a confidence
+ * interval, direct labels.
+ *
+ * The palette is stated once, in oklch, and every other tone is a mix of those
+ * two against the paper — so the dark scheme is two declarations, not nine.
+ * Hex fallbacks come first: a browser without oklch() or color-mix() drops the
+ * lines below and keeps a palette that is the same colours, just not
+ * perceptually derived.
  *
  * System font stacks only — nothing is fetched at read time. The two OFL fonts
  * in `assets/` exist solely to render the social card at build time.
  */
 
 :root {
-  --paper: #faf9f7;
-  --ink: #14130f;
-  --ink-muted: #4a4844;
-  --ink-faint: #7c7a74;
-  --rule: #cdcac3;
-  --rule-faint: #e2dfd8;
-  --band: #e7e4dd;
+  --paper: #eeebe5;
+  --ink: #241e18;
+  --ink-muted: #56504a;
+  --ink-faint: #7f7a74;
+  --rule: #c2bdb6;
+  --rule-faint: #d6d2cc;
+  --band: #dfdbd4;
+
+  --paper: oklch(0.94 0.008 85);
+  --ink: oklch(0.24 0.015 70);
+  /* dim, at about 55% — labels, captions, axis text */
+  --ink-faint: color-mix(in oklab, var(--ink) 55%, var(--paper));
+  --ink-muted: color-mix(in oklab, var(--ink) 74%, var(--paper));
+  /* hair, at about 12% — the faint rules */
+  --rule-faint: color-mix(in oklab, var(--ink) 12%, var(--paper));
+  --rule: color-mix(in oklab, var(--ink) 26%, var(--paper));
+  --band: color-mix(in oklab, var(--ink) 9%, var(--paper));
 
   --serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Times New Roman', serif;
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* The label register: everything that names a thing rather than says one. */
+  --label-track: 0.08em;
 
   --measure: 34rem;
   --gutter: 1.5rem;
@@ -29,15 +49,42 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #121210;
-    --ink: #ebe8e1;
-    --ink-muted: #b4b0a8;
-    --ink-faint: #837f77;
-    --rule: #3a3833;
-    --rule-faint: #26251f;
-    --band: #2a2823;
+    --paper: #100d09;
+    --ink: #e0ded8;
+    --ink-muted: #a5a29c;
+    --ink-faint: #6f6c66;
+    --rule: #3c3934;
+    --rule-faint: #262320;
+    --band: #23201c;
+
+    --paper: oklch(0.16 0.01 70);
+    --ink: oklch(0.9 0.008 85);
     color-scheme: dark;
   }
+}
+
+/*
+ * The label register.
+ *
+ * Uppercase, monospace, tracked out, one step smaller, and at dim rather than
+ * ink. It applies to every element that names something — a column, an axis, a
+ * figure, a readout — and to nothing that says something. Body prose and
+ * headings are deliberately untouched.
+ */
+.label,
+.dateline,
+thead th,
+figcaption,
+.pull .caption,
+.replay,
+.instrument-note,
+.readouts,
+.controls button {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: var(--label-track);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 * {
@@ -65,6 +112,11 @@ body {
     font-size: 17px;
     line-height: 1.58;
   }
+}
+
+/* With the instrument above it the report needs less air at the top. */
+.instrument ~ .page {
+  padding-top: 1.6rem;
 }
 
 .page {
@@ -186,11 +238,7 @@ hr.faint {
 }
 
 .dateline {
-  font-family: var(--mono);
-  font-size: 0.74rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  font-size: 0.7rem;
   margin: 0 0 1.1rem;
 }
 
@@ -228,10 +276,7 @@ td:first-child {
 thead th {
   border-bottom: 1px solid var(--rule);
   font-weight: 400;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-  font-size: 0.68rem;
-  letter-spacing: 0.05em;
+  font-size: 0.64rem;
 }
 
 tbody tr:last-child td {
@@ -286,18 +331,24 @@ figure svg {
   overflow: visible;
 }
 
+/*
+ * Captions are the one place the label register earns its keep least: they are
+ * sentences, and uppercase monospace sentences are slower to read than the
+ * serif they replace. Held to a generous line height and a short measure so
+ * that cost stays small, because consistency with the instrument's rail is
+ * worth more here than a fractionally faster caption.
+ */
 figcaption {
-  font-size: 0.85rem;
-  color: var(--ink-muted);
-  margin-top: 0.7rem;
-  line-height: 1.5;
+  font-size: 0.72rem;
+  margin-top: 0.8rem;
+  line-height: 1.75;
+  max-width: 46rem;
 }
 
 .replay {
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  color: var(--ink-faint);
-  margin-top: 0.5rem;
+  font-size: 0.66rem;
+  text-transform: none;
+  margin-top: 0.6rem;
   overflow-x: auto;
   white-space: nowrap;
   -webkit-overflow-scrolling: touch;
@@ -332,10 +383,9 @@ figcaption {
 }
 
 .pull .caption {
-  font-size: 0.85rem;
-  color: var(--ink-muted);
-  margin-top: 0.7rem;
-  line-height: 1.45;
+  font-size: 0.72rem;
+  margin-top: 0.8rem;
+  line-height: 1.7;
 }
 
 /* -- Notes --------------------------------------------------------------- */
@@ -371,4 +421,201 @@ footer {
 
 footer p {
   margin-bottom: 0.6rem;
+}
+
+/* -- The instrument ------------------------------------------------------ */
+
+/*
+ * The canvas has its own reserved height from the first paint, so nothing
+ * below it moves when the data lands. The static PNG occupies that height
+ * immediately; the canvas replaces it only once WebGL is running. The controls
+ * are laid out from the start and merely made visible, for the same reason.
+ */
+.instrument {
+  --stage-h: min(64vh, 30rem);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1.3rem;
+  margin-bottom: 2.6rem;
+}
+
+.instrument-stage {
+  position: relative;
+  width: 100%;
+  height: var(--stage-h);
+  overflow: hidden;
+}
+
+.instrument-static,
+.instrument-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.instrument-static {
+  object-fit: contain;
+}
+
+/* Exactly one of the two is on screen, always. */
+.instrument-static[data-live='true'] {
+  display: none;
+}
+
+.instrument-canvas[data-live='false'] {
+  display: none;
+}
+
+.instrument-rail,
+.instrument-note {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.readouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 1.5rem;
+  font-size: 0.66rem;
+  line-height: 1.95;
+}
+
+.readouts i {
+  font-style: normal;
+  opacity: 0.66;
+  margin-right: 0.75em;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  margin-top: 0.7rem;
+}
+
+.controls[data-live='false'] {
+  visibility: hidden;
+}
+
+.controls button {
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--ink-faint);
+  font-size: 0.62rem;
+  line-height: 1;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  min-width: 4.6rem;
+}
+
+.controls button:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
+}
+
+/* The track, with the day-31 label given its own band beneath it. */
+.scrub {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 0.85rem;
+}
+
+/* A track wide enough to be dragged with a thumb, drawn as a hairline. */
+.scrub input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 2.1rem;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scrub input[type='range']::-webkit-slider-runnable-track {
+  height: 1px;
+  background: var(--rule);
+}
+
+.scrub input[type='range']::-moz-range-track {
+  height: 1px;
+  background: var(--rule);
+}
+
+.scrub input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 22px;
+  margin-top: -10.5px;
+  background: var(--ink);
+  border: 0;
+  border-radius: 0;
+}
+
+.scrub input[type='range']::-moz-range-thumb {
+  width: 11px;
+  height: 22px;
+  background: var(--ink);
+  border: 0;
+  border-radius: 0;
+}
+
+.scrub input[type='range']:focus-visible {
+  outline: 1px solid var(--ink-faint);
+  outline-offset: 2px;
+}
+
+/* The fixed marker. Not draggable, not interactive — a date on a ruler. */
+.scrub .tick {
+  position: absolute;
+  top: 0.35rem;
+  height: 1.4rem;
+  border-left: 1px solid var(--ink-faint);
+  pointer-events: none;
+}
+
+.scrub .tick span {
+  position: absolute;
+  top: 1.5rem;
+  left: 0.3rem;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: var(--label-track);
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.instrument-note {
+  font-size: 0.62rem;
+  line-height: 1.85;
+  margin: 1.1rem auto 0;
+}
+
+/* The replay command is a command. It is not a label and is not uppercased. */
+.instrument-note code {
+  font-size: 1em;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--ink-muted);
+}
+
+@media (max-width: 640px) {
+  /*
+   * A disc twice as wide as it is tall, and on a phone it is the width that
+   * runs out first — so the stage follows the width rather than the viewport
+   * height, and the field fills it instead of floating in a tall empty box.
+   */
+  .instrument {
+    --stage-h: max(15rem, 52vw);
+    margin-bottom: 2rem;
+  }
+
+  .readouts {
+    gap: 0 1.1rem;
+    font-size: 0.62rem;
+  }
 }

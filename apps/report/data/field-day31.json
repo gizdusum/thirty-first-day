@@ -1,0 +1,14 @@
+{
+  "day": 31,
+  "liveCharters": 946,
+  "totalBranches": 3672,
+  "reportable": 255,
+  "revokedCumulative": 54,
+  "multiplier": 1.19,
+  "yieldPerBranchPerDay": 162.03703703703704,
+  "regime": "contraction",
+  "charters": 1000,
+  "cellId": "3b2ab0b6e0d949fd",
+  "seed": 1000000,
+  "replay": "pnpm study replay 3b2ab0b6e0d949fd 1000000"
+}

@@ -852,11 +852,11 @@ export default function Page() {
           <span className="builder-label">Builder</span>
           <a href="https://x.com/gizdusumandnode" target="_blank" rel="noopener noreferrer">
             <MarkX />
-            x.com/gizdusumandnode
+            gizdusumandnode
           </a>
           <a href="https://github.com/gizdusum" target="_blank" rel="noopener noreferrer">
             <MarkGitHub />
-            github.com/gizdusum
+            gizdusum
           </a>
         </p>
       </footer>

@@ -435,9 +435,14 @@ footer p {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  /* Column gap chosen so the three items clear the 34rem measure on one line
-     at desktop; below that they wrap, which is the intended phone layout. */
-  gap: 0.4rem 1rem;
+  /*
+   * Wide between the pairs, so each mark plainly belongs to the name after it
+   * rather than floating between two of them. A phone has 327px of column and
+   * the three items need 293 of it, so one line there would mean a pair gap of
+   * 17px or less — at which point the pairs stop reading as pairs. It wraps to
+   * two lines instead, which is the better trade.
+   */
+  gap: 0.4rem 1.75rem;
   font-family: var(--mono);
   text-transform: uppercase;
   letter-spacing: var(--label-track);
@@ -451,11 +456,25 @@ footer p {
   opacity: 0.7;
 }
 
+/*
+ * The names are names, not headings: lowercase, at ink, and with no underline
+ * at rest. The mark stays at dim so the eye lands on the name and the icon
+ * reads as punctuation next to it.
+ */
 .builder a {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.45em;
+  /* About a third of a space, so the mark binds to its own name. */
+  gap: 0.2em;
   white-space: nowrap;
+  text-transform: none;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.builder a:hover,
+.builder a:focus-visible {
+  text-decoration: underline;
 }
 
 /*
@@ -466,11 +485,13 @@ footer p {
 .builder .mark {
   width: 0.72em;
   height: 0.72em;
+  color: var(--ink-faint);
   flex: none;
   align-self: center;
   position: relative;
   top: 0.045em;
 }
+
 
 /* -- The instrument ------------------------------------------------------ */
 

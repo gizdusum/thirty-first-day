@@ -1,7 +1,24 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 
+import { ENTRANCE } from '../config'
 import './globals.css'
+
+/*
+ * Arm the entrance before the first paint.
+ *
+ * Without this the server's settled page paints, hydration runs, and only then
+ * does the entrance take over — a visible flash of the masthead, which would
+ * be in every screen recording. Eleven lines inline is the price of not having
+ * that. It writes one attribute and nothing else; the instrument removes it,
+ * and removes it anyway if the field never comes up.
+ */
+const ARM = `(function(){try{
+var p=new URLSearchParams(location.search);
+var forced=p.get('entrance')==='1';
+var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if(forced||!reduced)document.documentElement.setAttribute('data-entrance','arming');
+}catch(e){}})()`
 
 const TITLE = 'The Thirty-First Day'
 const DESCRIPTION =
@@ -55,7 +72,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {ENTRANCE ? <script dangerouslySetInnerHTML={{ __html: ARM }} /> : null}
+        {children}
+      </body>
     </html>
   )
 }

@@ -14,7 +14,7 @@ import exemplarData from '../data/exemplar.json'
 import fieldDay31 from '../data/field-day31.json'
 import licensesData from '../data/licenses.json'
 
-const REPO = 'https://github.com/thirty-first-day/thirty-first-day'
+const REPO = 'https://github.com/gizdusum/thirty-first-day'
 const exemplar = exemplarData as unknown as Exemplar & { replay: string; cellId: string; seed: number }
 const licenses = (licensesData as { levels: LicenseLevel[] }).levels
 

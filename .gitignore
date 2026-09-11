@@ -10,3 +10,9 @@ runs-log*.txt
 apps/report/.next
 apps/report/out
 apps/report/next-env.d.ts
+
+# Never. Not in this repo, not in any future one.
+.env
+.env.*
+!.env.example
+.vercel/

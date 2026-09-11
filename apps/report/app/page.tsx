@@ -509,11 +509,75 @@ export default function Page() {
           seeds) and B (one factor at a time, 40 cells, 2,000 runs) are done and are what this page
           reports. C, a full factorial over the top three axes, has <em>not</em> been run and is not
           planned before the mint: at the measured throughput it is about three and a half hours,
-          and the ranking from B already answers what it was there to answer. D, a Latin hypercube
-          over the whole space at one seed a cell, was still running when this page was published;
-          its only job is a single honest sentence of the form &ldquo;of 1,500 cells sampled, N
-          showed a material difference and M did not&rdquo;, against the threshold in section 8. If
-          it is not stated here, it had not finished.
+          and the ranking from B already answers what it was there to answer.
+        </p>
+        <p>
+          <strong>What suite D turned out to be.</strong> D completed, 1,500 cells. Five of its
+          fourteen axes never reached their cells: a suite composes a cell by shallow-merging one
+          level per axis, and several axes write the same key, so the last one composed silently
+          wins. What survives is a valid hypercube over the nine remaining axes with the other five
+          pinned &mdash; and hunter gas, which carries the strongest result in the study, is one of
+          the nine.
+        </p>
+        <div className="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th className="wrap">Hunter gas, against the profitability boundary</th>
+                <th>Cells</th>
+                <th>No revocation at all</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="wrap">0&times;, 0.25&times;, 0.5&times;</td>
+                <td>643</td>
+                <td>0.0%</td>
+              </tr>
+              <tr>
+                <td className="wrap">1&times;</td>
+                <td>211</td>
+                <td>2.4%</td>
+              </tr>
+              <tr>
+                <td className="wrap">2&times;</td>
+                <td>213</td>
+                <td>63.8%</td>
+              </tr>
+              <tr>
+                <td className="wrap">4&times;</td>
+                <td>213</td>
+                <td>99.5%</td>
+              </tr>
+              <tr>
+                <td className="wrap">8&times;</td>
+                <td>211</td>
+                <td>100.0%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Across the surviving axes, and against the threshold in section 8: supply minted to
+          wallets differs beyond seed noise in <span className="num">47.6%</span> of the 1,491
+          distinct cells, day-45 yield in <span className="num">23.5%</span>, day-90 yield in{' '}
+          <span className="num">10.1%</span>, and the multiplier integral in{' '}
+          <span className="num">3.4%</span> &mdash; below the ~5% you would clear by chance, which
+          is a null. Every one of the 564 cells with a delta of exactly zero is a cell where gas sat
+          above the boundary and nothing was ever collected.
+        </p>
+        <p>
+          A clobbered axis does not throw. It produces a flat row with overlapping intervals, which
+          is exactly what a real null looks like &mdash; and a null is publishable. That is why the
+          axis audit now runs before the report and exits non-zero. Suites A and B are unaffected,
+          because one factor at a time composes a single level per cell and nothing can collide; the
+          audit confirms it. The defect is written up in{' '}
+          <a
+            href={`${REPO}/blob/main/docs/experimental-design.md#composition-five-of-suite-ds-axes-never-reached-the-cells`}
+          >
+            experimental-design.md
+          </a>
+          .
         </p>
       </div>
 

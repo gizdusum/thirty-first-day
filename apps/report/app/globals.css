@@ -423,6 +423,55 @@ footer p {
   margin-bottom: 0.6rem;
 }
 
+/*
+ * The builder line.
+ *
+ * In the label register like every other label on the page, at the footer's own
+ * size. Wraps rather than overflows — on a phone the three items fall onto two
+ * lines and the side gutter is untouched, because the wrapping happens inside
+ * the column rather than by widening it.
+ */
+.builder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  /* Column gap chosen so the three items clear the 34rem measure on one line
+     at desktop; below that they wrap, which is the intended phone layout. */
+  gap: 0.4rem 1rem;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: var(--label-track);
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  margin-top: 1.1rem;
+  margin-bottom: 0;
+}
+
+.builder-label {
+  opacity: 0.7;
+}
+
+.builder a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45em;
+  white-space: nowrap;
+}
+
+/*
+ * Sized to the cap height of the label text, not to its em box, so the mark
+ * sits level with the letters beside it rather than floating above or below
+ * them. The only icons on the page; they are meant to stay quiet.
+ */
+.builder .mark {
+  width: 0.72em;
+  height: 0.72em;
+  flex: none;
+  align-self: center;
+  position: relative;
+  top: 0.045em;
+}
+
 /* -- The instrument ------------------------------------------------------ */
 
 /*

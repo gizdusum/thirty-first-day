@@ -64,8 +64,8 @@ export default function Page() {
       </p>
       <p>
         In the model, at tick 719 no genesis charter is reportable. At tick 720 every one that has
-        not interacted is. At the whitepaper defaults that is about 30% of live charters, arriving
-        at once.
+        not interacted is. At the whitepaper defaults that is 308 charters &mdash; 30.8% of the
+        live set, CI [30.8, 30.9] over 30 seeds &mdash; arriving at once.
       </p>
 
       {/* ------------------------------------------------------------------ */}
@@ -86,7 +86,7 @@ export default function Page() {
         This is not a statistical result and it does not need a confidence interval. It follows from
         the rule. &sect;4 sets <code>signal(n) = F(n&minus;1) + F(n&minus;2)</code> &mdash; the policy signal for an
         epoch is the net flow of the <em>two preceding</em> epochs.
-        The first revocations land six hours into day 30. The epoch that closes as the wave arrives
+        The first revocations land six hours into the thirty-first day. The epoch that closes as the wave arrives
         is still reading flow from two epochs earlier, both of them entirely pre-wave. The
         multiplier cannot move in response until two epoch closes later.
       </p>
@@ -202,11 +202,12 @@ export default function Page() {
         This contradicts the intuitive reading, and the contradiction is worth sitting with.
         Destroying a third of the charters sounds as though it should permanently concentrate
         issuance among those who remain. It does not, and the reason is that the dormant cohort was
-        never holding a third of the issuance. On day 31 they are about 30% of live charters and{' '}
-        <strong>8.2% of live branches.</strong>
+        never holding a third of the issuance. On day 31 they are 30.8% of live charters and{' '}
+        <strong>8.3% of live branches</strong> &mdash; CI [8.29, 8.33] over 30 seeds, a remarkably
+        tight interval for something nothing in the model sets.
       </p>
       <p>
-        Nothing in the model sets that 8.2%. It emerges: a branch is bought at the daily licence
+        Nothing in the model sets that 8.3%. It emerges: a branch is bought at the daily licence
         auction (&sect;7), and charters that never interact never buy one. Thirty days of committed
         bankers expanding, and tourists not, is what produces it. The wave destroys a large share of
         the <em>charters</em> and a small share of the <em>claims on issuance</em>.
@@ -363,7 +364,9 @@ export default function Page() {
       </p>
       <p>
         The study models it as a fourth arm, built only when a cell asks for it. With the switch
-        thrown on day 15, on one exemplar seed:
+        thrown on day 15, <strong>on a single exemplar seed</strong> &mdash; this section is one
+        run, not a distribution, and should be read as an illustration of the mechanism rather than
+        an estimate of its size:
       </p>
 
       <div className="scroll">
@@ -433,7 +436,8 @@ export default function Page() {
         no sell pressure, and precisely why the net flow signal in &sect;4 never counts a wei of it.
       </p>
       <p>
-        On a 45-day run with the switch on day 15, the seat market moved{' '}
+        On a separate 45-day run of the same cell and seed &mdash; a shorter horizon than the table
+        above, so the figures are not comparable to it &mdash; the seat market moved{' '}
         <strong>206.7 ETH</strong> against 748.7 ETH of sell-side pool volume the signal did see
         &mdash; <strong>27.6%</strong>, and 7.9% of the pool&rsquo;s own ETH reserve. In that run it
         pointed against the signal: the market absorbed sellers who would otherwise have pushed

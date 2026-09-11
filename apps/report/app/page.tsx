@@ -7,9 +7,9 @@ import {
   YieldChart,
   type Exemplar,
   type LicenseLevel,
-} from '@/components/charts'
-import exemplarData from '@/data/exemplar.json'
-import licensesData from '@/data/licenses.json'
+} from '../components/charts'
+import exemplarData from '../data/exemplar.json'
+import licensesData from '../data/licenses.json'
 
 const REPO = 'https://github.com/thirty-first-day/thirty-first-day'
 const exemplar = exemplarData as unknown as Exemplar & { replay: string; cellId: string; seed: number }

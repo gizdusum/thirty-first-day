@@ -6,22 +6,24 @@
  * multiplier delta on day 31 is exactly zero in all 200 seeds, with zero
  * variance, because the policy signal is still reading pre-wave flow.
  *
- * Rendered at build time into a static PNG. The two fonts are OFL-licensed and
- * are used only here; the page itself uses system font stacks.
+ * Written to `public/og.png` by `pnpm og`, and committed. A real file with a
+ * real extension, rather than Next's metadata-image route: that route exports
+ * without a file extension, and a static host then serves it as an
+ * octet-stream, which scrapers decline to render as a card. Checked, not
+ * assumed — the first deploy did exactly that.
+ *
+ * The two fonts are OFL-licensed and are used only here; the page itself uses
+ * system font stacks and fetches nothing at read time.
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+
+import React from 'react'
 
 import { ImageResponse } from 'next/og'
 
-/** Static export: the image is generated once, at build time. */
-export const dynamic = 'force-static'
-
-export const alt =
-  'The Thirty-First Day — an independent study of The Standard Reserve. On day 31 the multiplier delta is exactly 0.0000, in all 200 seeds.'
-export const size = { width: 1200, height: 630 }
-export const contentType = 'image/png'
+const size = { width: 1200, height: 630 }
 
 const PAPER = '#faf9f7'
 const INK = '#14130f'
@@ -29,7 +31,7 @@ const MUTED = '#4a4844'
 const FAINT = '#7c7a74'
 const RULE = '#cdcac3'
 
-export default async function Image() {
+async function render(): Promise<ImageResponse> {
   const assets = join(process.cwd(), 'assets')
   const serif = readFileSync(join(assets, 'EBGaramond-Regular.ttf'))
   const mono = readFileSync(join(assets, 'JetBrainsMono-Regular.ttf'))
@@ -130,3 +132,12 @@ export default async function Image() {
     },
   )
 }
+
+async function main(): Promise<void> {
+  const out = join(process.cwd(), 'public', 'og.png')
+  const response = await render()
+  writeFileSync(out, Buffer.from(await response.arrayBuffer()))
+  console.log(`og: wrote ${out}`)
+}
+
+void main()

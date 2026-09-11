@@ -16,3 +16,8 @@ apps/report/next-env.d.ts
 .env.*
 !.env.example
 .vercel/
+
+# Social assets. Rendered on demand by `pnpm video`; a 20 MB binary does not
+# belong in a repo people clone for a 22 MB provenance record.
+day31.mp4
+apps/report/frames/

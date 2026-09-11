@@ -26,6 +26,7 @@ import {
   frameAt,
   type EntranceLine,
 } from './entrance'
+import * as video from './video'
 import { ENTRANCE } from '../config'
 
 const DAY_31 = 31
@@ -137,6 +138,25 @@ function pad(value: number, width: number): string {
  * recording needs to be reproducible. `?chrome=0` drops the skip control so a
  * screen capture has no UI in it.
  */
+/**
+ * Capture mode: `?capture=1&t=<seconds>`.
+ *
+ * Renders the video timeline frozen at exactly `t` and nothing else — no page
+ * beneath, no controls, no cursor, no transition. Nothing in the path reads the
+ * wall clock or `requestAnimationFrame`, so the same `t` gives the same pixels
+ * on every run, which is the whole reason a frame-stepped render is possible.
+ *
+ * The page's own entrance is untouched by this; the two share the renderer and
+ * nothing else.
+ */
+function captureIntent(): { capture: boolean; t: number } {
+  if (typeof window === 'undefined') return { capture: false, t: 0 }
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('capture') !== '1') return { capture: false, t: 0 }
+  const raw = Number(params.get('t'))
+  return { capture: true, t: Number.isFinite(raw) ? raw : 0 }
+}
+
 function entranceIntent(): { play: boolean; chrome: boolean } {
   if (!ENTRANCE || typeof window === 'undefined') return { play: false, chrome: true }
   const params = new URLSearchParams(window.location.search)
@@ -160,6 +180,7 @@ export function Instrument({ initial }: { initial: Initial }) {
 
   const [entrance, setEntrance] = useState<'idle' | 'playing' | 'done'>('idle')
   const [chrome, setChrome] = useState(true)
+  const [capture, setCapture] = useState<{ t: number; frame: video.VideoFrame } | null>(null)
 
   const dayRef = useRef(day)
   dayRef.current = day
@@ -168,6 +189,8 @@ export function Instrument({ initial }: { initial: Initial }) {
   const applyRef = useRef<((d: number) => void) | null>(null)
   /** Non-null exactly while the entrance is running. */
   const clockRef = useRef<{ start: number } | null>(null)
+  /** True in capture mode, so the fit uses the entrance framing. */
+  const captureRef = useRef(false)
   const skipRef = useRef<(() => void) | null>(null)
   const lineShownRef = useRef<EntranceLine | null>(null)
 
@@ -276,7 +299,7 @@ export function Instrument({ initial }: { initial: Initial }) {
       const probe = new THREE.Vector3()
 
       const frameDisc = (): void => {
-        const inEntrance = clockRef.current !== null
+        const inEntrance = clockRef.current !== null || captureRef.current
         const portrait = camera.aspect < 1.1
         const lean = inEntrance && portrait ? 1 - settleNow : 0
         const margin = inEntrance ? (portrait ? PORTRAIT_MARGIN : ENTRANCE_MARGIN) : MARGIN
@@ -450,6 +473,66 @@ export function Instrument({ initial }: { initial: Initial }) {
         resize()
       }
       skipRef.current = finish
+
+      /*
+       * Capture mode. One frame, drawn once, then a signal — no animation loop
+       * is ever started, so there is nothing running that could make two visits
+       * to the same `t` differ.
+       */
+      const cap = captureIntent()
+      if (cap.capture) {
+        captureRef.current = true
+        const f = video.frameAt(cap.t)
+        document.documentElement.setAttribute('data-capture', f.card ? 'card' : 'field')
+        document.documentElement.removeAttribute('data-entrance')
+        setChrome(false)
+        setPlaying(false)
+        setCapture({ t: cap.t, frame: f })
+        setEntrance('idle')
+
+        material.uniforms['uArrive']!.value = f.arrive
+        disc.rotation.y = f.spin
+        dayRef.current = f.day
+        setDay(f.day)
+        apply(f.day)
+        resize()
+        renderer.render(scene, camera)
+
+        cleanup = () => {
+          observer.disconnect()
+          visibility.disconnect()
+          scheme.removeEventListener('change', onScheme)
+          geometry.dispose()
+          material.dispose()
+          renderer.dispose()
+        }
+
+        setCohort(data)
+        setReplay(data.replay)
+        setLive(true)
+
+        /*
+         * The signal the render script waits on. `finish()` blocks until the
+         * GL commands for this frame have actually completed, the fonts are
+         * resolved so no line reflows after the shot, and two animation frames
+         * guarantee the compositor has presented it. Waiting on a timeout
+         * instead is how half-drawn frames get into a video.
+         */
+        void (async () => {
+          const gl = renderer.getContext()
+          gl.finish()
+          try {
+            await document.fonts.ready
+          } catch {
+            // A browser without the font API still has the system stack.
+          }
+          renderer.render(scene, camera)
+          gl.finish()
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+          ;(window as unknown as Record<string, unknown>)['__captureReady'] = true
+        })()
+        return
+      }
 
       let raf = 0
       let last = performance.now()
@@ -639,6 +722,24 @@ export function Instrument({ initial }: { initial: Initial }) {
           />
         </div>
       </div>
+
+      {capture !== null ? (
+        capture.frame.card ? (
+          <div className="endcard" aria-hidden="true">
+            <p className="endcard-headline">{video.CARD.headline}</p>
+            <p className="endcard-domain">{video.CARD.domain}</p>
+            <p className="endcard-standfirst">{video.CARD.standfirst}</p>
+          </div>
+        ) : (
+          <div className="entrance" aria-hidden="true">
+            <span className="entrance-day">DAY {video.counter(capture.frame.day)}</span>
+            <div className="entrance-type">
+              <p className="entrance-line">{video.LINES[capture.frame.line]}</p>
+              <p className="entrance-standfirst">{video.STANDFIRST}</p>
+            </div>
+          </div>
+        )
+      ) : null}
 
       {entrance === 'playing' ? (
         <div className="entrance" ref={overlayRef} aria-hidden="true">

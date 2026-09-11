@@ -754,3 +754,142 @@ html[data-entrance='arming'] .instrument-note {
     transition: none;
   }
 }
+
+/* -- Capture mode -------------------------------------------------------- */
+
+/*
+ * `?capture=1&t=<seconds>` renders one frozen frame of the video timeline and
+ * nothing else. Only the render script ever sees this: the report beneath is
+ * removed, not hidden behind an overlay, so no scrollbar can appear and no
+ * stray pixel of the page can reach the edge of a shot.
+ */
+html[data-capture] {
+  overflow: hidden;
+  cursor: none;
+}
+
+html[data-capture] body {
+  background: var(--paper);
+}
+
+html[data-capture] .page,
+html[data-capture] .instrument-rail,
+html[data-capture] .instrument-note,
+html[data-capture] .instrument-static {
+  display: none !important;
+}
+
+html[data-capture] .instrument {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+html[data-capture] .instrument-stage {
+  height: 100vh;
+}
+
+html[data-capture] .instrument-frame {
+  position: fixed;
+  inset: 0;
+  background: var(--paper);
+}
+
+/* The end card replaces the field outright. One cut, then nothing moves. */
+html[data-capture='card'] .instrument-frame {
+  display: none;
+}
+
+.endcard {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 8vw;
+}
+
+.endcard-headline {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: var(--label-track);
+  font-size: 1.5rem;
+  line-height: 1.45;
+  color: var(--ink);
+  margin: 0 0 3.2rem;
+  max-width: 40rem;
+}
+
+.endcard-domain {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 1rem;
+  line-height: 1.3;
+  color: var(--ink-faint);
+  margin: 0 0 0.9rem;
+}
+
+.endcard-standfirst {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: var(--label-track);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  margin: 0;
+}
+
+/*
+ * Capture-mode typography.
+ *
+ * A feed gives this video about 500 pixels of width, so everything is sized
+ * against that rather than against the 1920 frame it is rendered at: the
+ * headline lands near 14px once scaled, which is the smallest thing anyone
+ * will actually read on a phone. These rules exist only under [data-capture]
+ * and the page itself never sees them.
+ */
+html[data-capture] .entrance {
+  padding: 3vh 5vw 6vh;
+}
+
+html[data-capture] .entrance-day {
+  top: 5vh;
+  left: 5vw;
+  font-size: 1.3rem;
+}
+
+html[data-capture] .entrance-type {
+  max-width: 62rem;
+}
+
+html[data-capture] .entrance-line {
+  font-size: 2.6rem;
+  line-height: 1.4;
+  margin-bottom: 1.1rem;
+}
+
+html[data-capture] .entrance-standfirst {
+  font-size: 1.25rem;
+}
+
+html[data-capture] .endcard-headline {
+  font-size: 3rem;
+  line-height: 1.4;
+  max-width: 52rem;
+  margin-bottom: 4rem;
+}
+
+html[data-capture] .endcard-domain {
+  font-size: 2.4rem;
+  letter-spacing: 0.2em;
+  margin-bottom: 1.4rem;
+}
+
+html[data-capture] .endcard-standfirst {
+  font-size: 1.25rem;
+}

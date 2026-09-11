@@ -3,12 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "tsx scripts/field-png.ts && next build",
+    "dev": "next dev",
+    "field": "tsx scripts/field-png.ts",
+    "og": "tsx scripts/og.tsx",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "og": "tsx scripts/og.tsx",
-    "field": "tsx scripts/field-png.ts"
+    "video": "node scripts/render-video.mjs"
   },
   "dependencies": {
     "next": "15.5.25",

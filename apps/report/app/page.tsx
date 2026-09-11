@@ -494,6 +494,20 @@ export default function Page() {
         </li>
       </ul>
 
+      <div className="note">
+        <p>
+          <strong>What has not been run.</strong> The design has four suites. A (the baseline, 200
+          seeds) and B (one factor at a time, 40 cells, 2,000 runs) are done and are what this page
+          reports. C, a full factorial over the top three axes, has <em>not</em> been run and is not
+          planned before the mint: at the measured throughput it is about three and a half hours,
+          and the ranking from B already answers what it was there to answer. D, a Latin hypercube
+          over the whole space at one seed a cell, was still running when this page was published;
+          its only job is a single honest sentence of the form &ldquo;of 1,500 cells sampled, N
+          showed a material difference and M did not&rdquo;, against the threshold in section 8. If
+          it is not stated here, it had not finished.
+        </p>
+      </div>
+
       {/* ------------------------------------------------------------------ */}
 
       <h2>

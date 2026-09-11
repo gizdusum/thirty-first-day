@@ -191,7 +191,13 @@ The design is staged instead.
 
 Suite C takes its axes from suite B's result, not from an assumption, so
 `buildFactorial` requires them explicitly:
-`pnpm study run factorial --axes=a,b,c`.
+`pnpm study run factorial --axes=dormancyRate,licensesPerDay,demandRegime`.
+
+**Suite C has not been run, and is not planned before the mint.** At the
+measured throughput it is 150 cells x 30 seeds = 4,500 runs, about three and a
+half hours, and suite B's ranking already answers the question it was there to
+answer — which axes move the result. It stays in the design because the
+interactions are worth having eventually, not because they are pending.
 
 Cells are deduplicated by **effective configuration**, so the several axes that
 include the baseline as one of their levels resolve to one cell rather than a

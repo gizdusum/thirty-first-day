@@ -23,6 +23,7 @@ outcomes, not a single path.
 | --- | --- |
 | `packages/protocol` | The model. Deterministic, zero runtime dependencies, MIT. |
 | `packages/study` | The Monte Carlo runner and the experimental design. |
+| `apps/report` | The published report. Next.js, static export, hand-rolled SVG charts. |
 | `docs/mechanics.md` | Every rule implemented, keyed to its whitepaper section, plus the study layers built on top. Read this first. |
 | `docs/experimental-design.md` | The axes, the four suites, the demand regimes, and what counts as a difference. |
 | `docs/findings.md` | Places where the whitepaper had to be interpreted, and what the model does about each. |

@@ -5,3 +5,8 @@ coverage
 
 # Study runner scratch
 runs-log*.txt
+
+# Report build output
+apps/report/.next
+apps/report/out
+apps/report/next-env.d.ts

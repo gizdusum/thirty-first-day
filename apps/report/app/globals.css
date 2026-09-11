@@ -1,0 +1,374 @@
+/*
+ * Grayscale, one column, hairline rules.
+ *
+ * No accent colour, no gradient, no shadow, no rounded corner, no icon. The
+ * only non-text element on the page is a chart, and the charts obey the same
+ * rule: thin strokes, one light band for a confidence interval, direct labels.
+ *
+ * System font stacks only — nothing is fetched at read time. The two OFL fonts
+ * in `assets/` exist solely to render the social card at build time.
+ */
+
+:root {
+  --paper: #faf9f7;
+  --ink: #14130f;
+  --ink-muted: #4a4844;
+  --ink-faint: #7c7a74;
+  --rule: #cdcac3;
+  --rule-faint: #e2dfd8;
+  --band: #e7e4dd;
+
+  --serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Times New Roman', serif;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --measure: 34rem;
+  --gutter: 1.5rem;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121210;
+    --ink: #ebe8e1;
+    --ink-muted: #b4b0a8;
+    --ink-faint: #837f77;
+    --rule: #3a3833;
+    --rule-faint: #26251f;
+    --band: #2a2823;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.62;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 17px;
+    line-height: 1.58;
+  }
+}
+
+.page {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 4rem var(--gutter) 6rem;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 2.5rem var(--gutter) 4rem;
+  }
+}
+
+/* -- Type ---------------------------------------------------------------- */
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  line-height: 1.2;
+  margin: 0;
+}
+
+h1 {
+  font-size: 2.6rem;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 640px) {
+  h1 {
+    font-size: 1.9rem;
+  }
+}
+
+h2 {
+  font-size: 1.35rem;
+  margin: 3.5rem 0 0.35rem;
+}
+
+h2 .num {
+  font-family: var(--mono);
+  font-size: 0.78em;
+  color: var(--ink-faint);
+  margin-right: 0.7em;
+}
+
+h3 {
+  font-size: 1.05rem;
+  font-style: italic;
+  margin: 2rem 0 0.4rem;
+}
+
+p {
+  margin: 0 0 1.1rem;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-style: dotted;
+}
+
+strong {
+  font-weight: 600;
+}
+
+em {
+  font-style: italic;
+}
+
+code,
+.mono,
+.num {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  font-variant-numeric: tabular-nums;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 3rem 0;
+}
+
+hr.faint {
+  border-top-color: var(--rule-faint);
+  margin: 2rem 0;
+}
+
+/* -- Masthead ------------------------------------------------------------ */
+
+.masthead {
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 1.4rem;
+  margin-bottom: 1.6rem;
+}
+
+.subtitle {
+  font-size: 1.08rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+  margin: 0.9rem 0 0;
+  max-width: 30rem;
+}
+
+.standfirst {
+  font-size: 0.95rem;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1.6rem;
+  margin-bottom: 2.4rem;
+}
+
+.dateline {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 1.1rem;
+}
+
+/* -- Tables -------------------------------------------------------------- */
+
+.scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 1.4rem 0;
+}
+
+table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+  min-width: 22rem;
+}
+
+th,
+td {
+  text-align: right;
+  padding: 0.34rem 0.7rem 0.34rem 0;
+  border-bottom: 1px solid var(--rule-faint);
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  text-align: left;
+  padding-right: 1.2rem;
+}
+
+thead th {
+  border-bottom: 1px solid var(--rule);
+  font-weight: 400;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+}
+
+tbody tr:last-child td {
+  border-bottom: 1px solid var(--rule);
+}
+
+td.wrap,
+th.wrap {
+  white-space: normal;
+  font-family: var(--serif);
+  font-size: 0.88rem;
+  min-width: 12rem;
+}
+
+/* -- Figures ------------------------------------------------------------- */
+
+/*
+ * Figures break the measure on a wide screen.
+ *
+ * A 34rem column is right for prose and too narrow for a chart with axis
+ * labels on it; on a phone there is nothing to break out of, so they do not.
+ */
+figure {
+  margin: 2.4rem 0;
+}
+
+@media (min-width: 900px) {
+  figure {
+    width: calc(var(--measure) + 9rem);
+    margin-left: -4.5rem;
+  }
+}
+
+/* Exactly one chart layout is drawn; see components/charts.tsx. */
+.chart-compact {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .chart-wide {
+    display: none;
+  }
+  .chart-compact {
+    display: block;
+  }
+}
+
+figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+figcaption {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  margin-top: 0.7rem;
+  line-height: 1.5;
+}
+
+.replay {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  margin-top: 0.5rem;
+  overflow-x: auto;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+
+.replay::before {
+  content: '$ ';
+  opacity: 0.55;
+}
+
+/* -- Pull figure --------------------------------------------------------- */
+
+.pull {
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  padding: 1.4rem 0;
+  margin: 2.2rem 0;
+  text-align: center;
+}
+
+.pull .figure {
+  font-family: var(--mono);
+  font-size: 2.6rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 640px) {
+  .pull .figure {
+    font-size: 2rem;
+  }
+}
+
+.pull .caption {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  margin-top: 0.7rem;
+  line-height: 1.45;
+}
+
+/* -- Notes --------------------------------------------------------------- */
+
+.note {
+  border-left: 1px solid var(--rule);
+  padding-left: 1.1rem;
+  font-size: 0.92rem;
+  color: var(--ink-muted);
+  margin: 1.6rem 0;
+}
+
+ul,
+ol {
+  padding-left: 1.2rem;
+  margin: 0 0 1.1rem;
+}
+
+li {
+  margin-bottom: 0.45rem;
+}
+
+/* -- Footer -------------------------------------------------------------- */
+
+footer {
+  margin-top: 4.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--ink);
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  line-height: 1.55;
+}
+
+footer p {
+  margin-bottom: 0.6rem;
+}
